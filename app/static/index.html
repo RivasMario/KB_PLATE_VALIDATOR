@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>KB Plate Validator & Generator</title>
-    <link rel="stylesheet" href="static/style.css">
+    <link rel="stylesheet" href="static/style.css?v=2">
 </head>
 <body>
     <div class="container">
@@ -15,22 +15,37 @@
 
         <main>
             <div class="tabs">
-                <button class="tab-btn active" data-tab="pcb">PCB Mode</button>
-                <button class="tab-btn" data-tab="kle">KLE Mode (No PCB)</button>
+                <button class="tab-btn" data-tab="kle" id="tab-kle" class="active">KLE Mode (No PCB)</button>
+                <button class="tab-btn" data-tab="pcb" id="tab-pcb">PCB Mode</button>
             </div>
 
             <form id="plate-form">
                 <section id="pcb-section" class="tab-content active">
                     <div class="form-group">
-                        <label for="kle_file">KLE JSON Layout <span class="required">*</span></label>
-                        <div class="drop-zone" id="kle-drop-zone">
-                            <span>Drop KLE .json here or click to upload</span>
-                            <input type="file" id="kle_file" name="kle_file" accept=".json" required>
+                        <label>KLE JSON Layout <span class="required">*</span></label>
+                        <div class="input-toggle" style="margin-bottom: 0.5rem;">
+                            <label style="display: inline-block; font-weight: normal; margin-right: 1rem;">
+                                <input type="radio" name="kle_input_mode" value="text" checked> Paste Raw JSON
+                            </label>
+                            <label style="display: inline-block; font-weight: normal;">
+                                <input type="radio" name="kle_input_mode" value="file"> Upload File
+                            </label>
                         </div>
-                        <p class="file-name" id="kle-name"></p>
+                        
+                        <div id="kle-text-input">
+                            <textarea id="kle_text" name="kle_text" rows="6" style="width: 100%; padding: 0.5rem; border: 1px solid var(--border-color); border-radius: 6px; font-family: monospace;" placeholder='[&#10;  ["Esc","Q","W","E","R","T","Y","U","I","O","P","{","}","|"]&#10;]'></textarea>
+                        </div>
+
+                        <div id="kle-file-input" class="hidden">
+                            <div class="drop-zone" id="kle-drop-zone">
+                                <span>Drop KLE .json here or click to upload</span>
+                                <input type="file" id="kle_file" name="kle_file" accept=".json">
+                            </div>
+                            <p class="file-name" id="kle-name"></p>
+                        </div>
                     </div>
 
-                    <div class="form-group pcb-only">
+                    <div class="form-group pcb-only hidden">
                         <label for="pcb_file">KiCad PCB (.kicad_pcb)</label>
                         <div class="drop-zone" id="pcb-drop-zone">
                             <span>Drop KiCad PCB here or click to upload</span>
@@ -83,15 +98,16 @@
                         </div>
                     </div>
 
-                    <div id="kle-options" class="hidden">
+                    <div id="kle-options">
                         <h3>KLE Mounting Options</h3>
                         <div class="options-grid">
                             <div class="form-group">
                                 <label for="screw_preset">Screw Preset</label>
                                 <select id="screw_preset" name="screw_preset">
-                                    <option value="">None</option>
-                                    <option value="4corners">4 Corners</option>
-                                    <option value="6perimeter">6 Perimeter</option>
+                                    <option value="" selected>None (No Holes)</option>
+                                    <option value="6perimeter">Sandwich Case (6 Perimeter)</option>
+                                    <option value="4corners">Sandwich Case (4 Corners)</option>
+                                    <option value="poker">Poker (Standard 60% Tray Mount)</option>
                                     <option value="grid3x2">Grid 3x2</option>
                                     <option value="grid4x2">Grid 4x2</option>
                                     <option value="between_rows">Between Rows</option>
@@ -117,8 +133,13 @@
                     <div class="stat"><span class="label">Dimensions:</span> <span id="stat-dims">-</span></div>
                     <div class="stat"><span class="label">Screws:</span> <span id="stat-screws">-</span></div>
                 </div>
+                
+                <div id="preview-container" style="margin: 2rem 0; text-align: center; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 1rem; overflow: auto; max-height: 400px;">
+                    <!-- SVG will be injected here -->
+                </div>
+
                 <div id="validation-notice" class="notice"></div>
-                <p><a href="#" id="download-link" class="primary-btn">Download DXF Again</a></p>
+                <p><a href="#" id="download-link" class="primary-btn">Download DXF</a></p>
             </div>
 
             <div id="error-message" class="error hidden"></div>
@@ -129,6 +150,6 @@
         </footer>
     </div>
 
-    <script src="static/script.js"></script>
+    <script src="static/script.js?v=2"></script>
 </body>
 </html>

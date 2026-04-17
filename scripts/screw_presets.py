@@ -53,12 +53,26 @@ def between_rows(keys, plate_w, pad=0.0, inset=5.0, U1=19.05):
     return pts
 
 
+def poker(plate_w, plate_h, inset=5.0):
+    """Approximate standard 60% tray mount (Poker/GH60) hole locations.
+    Only strictly valid for ~15u x 5u boards. Values are rough approx offsets."""
+    return [
+        (19, plate_h - 40),                # Left edge (Tab/Caps)
+        (plate_w - 19, plate_h - 40),      # Right edge (Backspace/Pipe)
+        (plate_w / 2 - 20, 19),            # Bottom left (Space)
+        (plate_w / 2 + 20, 19),            # Bottom right (Space)
+        (plate_w / 2, plate_h / 2),        # Middle (G/H)
+        (plate_w / 2 - 30, plate_h - 19),  # Top middle (2/3)
+    ]
+
+
 PRESETS = {
     '4corners': four_corners,
     '6perimeter': six_perimeter,
     'grid3x2': lambda w, h, **kw: grid(w, h, 3, 2, **kw),
     'grid4x2': lambda w, h, **kw: grid(w, h, 4, 2, **kw),
     'between_rows': between_rows,
+    'poker': poker,
 }
 
 

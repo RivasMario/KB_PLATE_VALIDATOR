@@ -27,7 +27,8 @@ async def read_index():
 
 @app.post("/api/generate")
 async def api_generate_plate(
-    kle_file: UploadFile = File(...),
+    kle_file: Optional[UploadFile] = File(None),
+    kle_text: Optional[str] = Form(None),
     pcb_file: Optional[UploadFile] = File(None),
     switch_type: int = Form(1),
     stab_type: int = Form(0),
@@ -44,14 +45,19 @@ async def api_generate_plate(
     screw_custom: Optional[str] = Form(None),
     screw_inset: float = Form(5.0),
 ):
+    if not kle_file and not kle_text:
+        raise HTTPException(status_code=400, detail="Must provide either KLE file or KLE JSON text.")
+
     # Create a temporary directory for the session
     temp_dir = Path(tempfile.mkdtemp())
     try:
-        # Save KLE file
-        kle_path = temp_dir / f"kle_{uuid.uuid4()}.json"
-        with kle_path.open("wb") as buffer:
-            shutil.copyfileobj(kle_file.file, buffer)
-
+        # Handle KLE input
+        kle_path = None
+        if kle_file and kle_file.filename:
+            kle_path = temp_dir / f"kle_{uuid.uuid4()}.json"
+            with kle_path.open("wb") as buffer:
+                shutil.copyfileobj(kle_file.file, buffer)
+        
         # Save PCB file if provided
         pcb_path = None
         if pcb_file and pcb_file.filename:
@@ -65,7 +71,10 @@ async def api_generate_plate(
         # Generate the plate
         try:
             res = generate_plate(
-                str(kle_path), str(out_path), pcb_path=str(pcb_path) if pcb_path else None,
+                kle_path=str(kle_path) if kle_path else None,
+                kle_text=kle_text,
+                out_path=str(out_path), 
+                pcb_path=str(pcb_path) if pcb_path else None,
                 switch_type=switch_type, stab_type=stab_type,
                 kerf=kerf, pad=pad, screw_diameter=screw_diameter,
                 pcb_dx=pcb_dx, pcb_dy=pcb_dy,
@@ -82,31 +91,41 @@ async def api_generate_plate(
         if not out_path.exists():
             raise HTTPException(status_code=500, detail="DXF generation failed (output file missing)")
 
-        # Prepare metadata headers (X-Metadata-*)
-        headers = {
-            "X-Keys": str(res["keys"]),
-            "X-Plate-Width": str(res["plate_w"]),
-            "X-Plate-Height": str(res["plate_h"]),
-            "X-Screws": str(res["screws"]),
-            "X-Issues": str(len(res["issues"])),
-            "Access-Control-Expose-Headers": "X-Keys, X-Plate-Width, X-Plate-Height, X-Screws, X-Issues, Content-Disposition"
-        }
-
-        # Return the file
-        return FileResponse(
-            path=out_path,
-            filename="plate.dxf",
-            media_type="application/dxf",
-            headers=headers
-        )
+        # Return JSON with SVG and download link
+        # Instead of cleaning up immediately, we store the temp_dir path in a global dict
+        # or just rely on OS temp cleanup. For this MVP, we just leave it in temp_dir.
+        
+        return JSONResponse({
+            "svg": res["svg"],
+            "dxf_id": out_path.name,
+            "metadata": {
+                "keys": res["keys"],
+                "plate_w": res["plate_w"],
+                "plate_h": res["plate_h"],
+                "screws": res["screws"],
+                "issues": len(res["issues"])
+            }
+        })
 
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
-    # Note: Temp files are not automatically cleaned here because FileResponse 
-    # might still be reading them. In a real production app, we'd use BackgroundTasks.
-    # But for MVP, they'll just stay in the system's temp dir.
+
+@app.get("/api/download/{dxf_id}")
+async def api_download_dxf(dxf_id: str):
+    # In a real app we'd map this ID to the secure temp directory.
+    # For this MVP, we find the file in the tempdir's parent.
+    temp_parent = Path(tempfile.gettempdir())
+    # find the file
+    for p in temp_parent.glob(f"*/{dxf_id}"):
+        if p.is_file():
+            return FileResponse(
+                path=p,
+                filename="plate.dxf",
+                media_type="application/dxf"
+            )
+    raise HTTPException(status_code=404, detail="File not found")
 
 if __name__ == "__main__":
     import uvicorn

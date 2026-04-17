@@ -14,7 +14,28 @@ document.addEventListener('DOMContentLoaded', () => {
     const errorMsg = document.getElementById('error-message');
     const downloadLink = document.getElementById('download-link');
 
-    let currentTab = 'pcb';
+    let currentTab = 'kle';
+
+    // KLE Input Mode Toggle
+    const kleModeRadios = document.querySelectorAll('input[name="kle_input_mode"]');
+    const kleFileInputDiv = document.getElementById('kle-file-input');
+    const kleTextInputDiv = document.getElementById('kle-text-input');
+    const kleTextarea = document.getElementById('kle_text');
+
+    kleModeRadios.forEach(radio => {
+        radio.addEventListener('change', (e) => {
+            if (e.target.value === 'file') {
+                kleFileInputDiv.classList.remove('hidden');
+                kleTextInputDiv.classList.add('hidden');
+                kleTextarea.value = ''; // clear text if switching to file
+            } else {
+                kleFileInputDiv.classList.add('hidden');
+                kleTextInputDiv.classList.remove('hidden');
+                kleInput.value = ''; // clear file if switching to text
+                kleName.textContent = '';
+            }
+        });
+    });
 
     // Tab Switching
     tabBtns.forEach(btn => {
@@ -26,7 +47,6 @@ document.addEventListener('DOMContentLoaded', () => {
             if (currentTab === 'kle') {
                 kleOptions.classList.remove('hidden');
                 pcbOnlyGroups.forEach(el => el.classList.add('hidden'));
-                pcbInput.required = false;
             } else {
                 kleOptions.classList.add('hidden');
                 pcbOnlyGroups.forEach(el => el.classList.remove('hidden'));
@@ -91,51 +111,35 @@ document.addEventListener('DOMContentLoaded', () => {
                 body: formData
             });
 
+            const data = await response.json();
+
             if (!response.ok) {
-                const data = await response.json();
                 throw new Error(data.detail || 'Generation failed');
             }
 
-            // Get metadata from headers
-            const keys = response.headers.get('X-Keys');
-            const width = parseFloat(response.headers.get('X-Plate-Width')).toFixed(2);
-            const height = parseFloat(response.headers.get('X-Plate-Height')).toFixed(2);
-            const screws = response.headers.get('X-Screws');
-            const issues = parseInt(response.headers.get('X-Issues'));
-
-            // Handle file download
-            const blob = await response.blob();
-            const url = window.URL.createObjectURL(blob);
-            
-            // Auto-trigger download
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = 'plate.dxf';
-            document.body.appendChild(a);
-            a.click();
-            window.URL.revokeObjectURL(url);
-            document.body.removeChild(a);
-
-            // Update UI
-            document.getElementById('stat-keys').textContent = keys;
-            document.getElementById('stat-dims').textContent = `${width} x ${height} mm`;
-            document.getElementById('stat-screws').textContent = screws;
+            // Update UI with metadata
+            const meta = data.metadata;
+            document.getElementById('stat-keys').textContent = meta.keys;
+            document.getElementById('stat-dims').textContent = `${parseFloat(meta.plate_w).toFixed(2)} x ${parseFloat(meta.plate_h).toFixed(2)} mm`;
+            document.getElementById('stat-screws').textContent = meta.screws;
             
             const notice = document.getElementById('validation-notice');
-            if (issues > 0) {
-                notice.textContent = `Warning: ${issues} validation issue(s) detected. Check the console or your design for overlaps.`;
+            if (meta.issues > 0) {
+                notice.textContent = `Warning: ${meta.issues} validation issue(s) detected. Check the console or your design for overlaps.`;
                 notice.classList.remove('hidden');
             } else {
                 notice.classList.add('hidden');
             }
 
-            downloadLink.href = url;
+            // Render SVG preview
+            const previewContainer = document.getElementById('preview-container');
+            previewContainer.innerHTML = data.svg;
+
+            // Handle file download
+            const downloadUrl = `/api/download/${data.dxf_id}`;
+            downloadLink.href = downloadUrl;
             downloadLink.onclick = (e) => {
-                e.preventDefault();
-                const a2 = document.createElement('a');
-                a2.href = url;
-                a2.download = 'plate.dxf';
-                a2.click();
+                // let default behavior happen for regular click
             };
 
             results.classList.remove('hidden');
