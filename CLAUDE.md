@@ -83,6 +83,46 @@ For a 13.9mm switch (half-width 6.95mm):
 
 Issues flagged if actual distance < safe distance. Swillkb analysis found 5 marginal conflicts at 4.8-7.8mm (screw-to-combo), assessed as minor given 2.2mm M2 standard tolerances.
 
+### FreeCAD PCB Element Injection (Latest Approach)
+
+**Problem solved**: Previous Python/ezdxf approach caused coordinate scaling corruption - holes were microscopic and embedded inside switch holes.
+
+**Solution**: Use FreeCAD's native Python API for CAD geometry creation.
+
+**How it works**:
+1. Extract PCB coordinates from KiCad file (11 screw hole positions, 4 edge cutout positions)
+2. Generate Python macro code that creates Circle objects in FreeCAD:
+   ```python
+   for i, (x, y) in enumerate(screw_holes):
+       circle = Draft.makeCircle(
+           radius=1.1, 
+           placement=FreeCAD.Placement(FreeCAD.Vector(x, y, 0), FreeCAD.Rotation())
+       )
+       circle.Label = f"Screw_{i+1}"
+   ```
+3. Save macro to file: `add_holes_macro.py`
+4. Execute via `freecadcmd.exe` headless: `freecadcmd.exe add_holes_macro.py`
+5. FreeCAD creates new document with 15 circle objects at exact coordinates
+6. Save as .FCStd (FreeCAD native format)
+
+**Why FreeCAD approach works**:
+- Handles coordinate systems natively - no unit conversion errors
+- Draft.makeCircle() with Placement parameter is designed for CAD precision
+- Headless execution (freecadcmd) allows automation without GUI
+- FCStd format preserves exact coordinates (no rounding/corruption)
+
+**Advantages over ezdxf**:
+- No scaling corruption
+- Proper geometric object creation (circles not just graphics)
+- Can export to DXF natively from FreeCAD (preserves geometry)
+- Placement system is explicit and debuggable
+
+**Known issues with this approach**:
+- Requires FreeCAD 1.1 installed on system
+- Macro generation requires string formatting (file paths must be escaped properly)
+- File save to Downloads folder had access violation - workaround: save to C:\Temp first, then copy
+- Next step (DXF export) currently requires manual FreeCAD UI action
+
 ## Known Limitations & Edge Cases
 
 1. **Rectangle detection precision**: Algorithm finds ALL rectangular line sequences, not just holes. Requires post-filtering by size.
@@ -139,18 +179,27 @@ Issues flagged if actual distance < safe distance. Swillkb analysis found 5 marg
 - Check: ezdxf version compatibility - project uses modern ezdxf (check requirements.txt)
 - Debug: Try opening DXF with Inkscape to verify file integrity
 
-## Development Workflow
+## Development Workflow (Current)
 
-1. Run 10-iteration count script first (`swillkb2_final_10x.py`) - fast validation, deterministic
-2. If counts match expectations, run full analysis (`swillkb2_complete_analysis.py`) - includes visualization and overlap checking
-3. Review ASCII map for sanity (switch pattern should match 96% layout visually)
-4. If overlaps found, review manually - some conflicts may be acceptable depending on tolerance stack-up
+**Main pipeline**:
+1. Run `scripts/add_holes_freecad.py` - full end-to-end: extract → validate → create FreeCAD document
+2. Opens FreeCAD document at: `cc1e0e052d37d91e9d1f8f9d7166eea779a44e9f_PCB_HOLES.FCStd`
+3. Manual step: Export from FreeCAD to DXF (File → Export)
+4. Manual step: Merge DXF circles with original plate DXF
+
+**For validation only** (if skipping FreeCAD injection):
+1. Run `scripts/validate_new_plate.py` - generates ASCII map without adding holes
+2. Shows plate hole counts, PCB element counts, overlap analysis
+3. Useful for verifying plate integrity before adding holes
 
 ## Future Enhancements
 
-- [ ] Support for multiple plate designs in single run
+- [x] Add PCB elements to plate via FreeCAD (DONE)
+- [ ] Automate DXF export from FreeCAD macro (eliminate manual step)
+- [ ] Support LWPOLYLINE DXF entities (currently LINE-based only)
+- [ ] CLI-Anything integration for automated DXF merge
+- [ ] Batch processing for multiple plate designs
 - [ ] Configurable size thresholds (currently hardcoded)
 - [ ] 3D visualization (matplotlib/plotly)
-- [ ] Direct KiCad file modifications to import plate holes
 - [ ] Tolerance stack-up calculation for clearance margin analysis
 - [ ] Support for different stabilizer types (Cherry, Costar, BJ spring)
