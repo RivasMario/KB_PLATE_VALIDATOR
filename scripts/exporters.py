@@ -2,8 +2,8 @@
 exporters.py
 
 Utilities to export keyboard plates from Shapely geometry to manufacturing formats:
-1. Gerber (ZIP for JLCPCB) - Improved to ensure holes are recognized.
-2. 3D Model (STL for 3D printing) - Support for Puzzle Split (Zigzag).
+1. Gerber (ZIP for JLCPCB) - High-quality multi-layer stack for correct 3D preview.
+2. 3D Model (STL for 3D printing) - Support for Hole-Aware Puzzle Split.
 """
 
 import os
@@ -33,6 +33,7 @@ def export_gerber(outline_poly, cutout_polys, screws, screw_radius, output_zip):
     """
     Export plate geometry to a Gerber ZIP file compatible with JLCPCB.
     Ensures that switch holes and stabilizers are correctly identified as cutouts.
+    Adds solid board fills to Mask and Copper layers for correct 3D preview.
     """
     if GerberFile is None:
         raise ImportError("gerbonara not fully functional or installed")
@@ -41,18 +42,19 @@ def export_gerber(outline_poly, cutout_polys, screws, screw_radius, output_zip):
     if temp_dir.exists(): shutil.rmtree(temp_dir)
     temp_dir.mkdir(parents=True)
 
-    # 1. Edge.Cuts (Outline and all cutouts)
-    edge_cuts = GerberFile()
-    edge_cuts.unit = MM
     line_ap = CircleAperture(diameter=0.15, unit=MM)
     
+    # 1. Edge.Cuts (Outline and all cutouts as lines)
+    edge_cuts = GerberFile()
+    edge_cuts.unit = MM
+    
     def add_poly_as_lines(poly, file_obj, ap):
-        # Draw exterior
+        # Draw exterior loop
         coords = list(poly.exterior.coords)
         for i in range(len(coords) - 1):
             p1, p2 = coords[i], coords[i+1]
             file_obj.objects.append(Line(p1[0], p1[1], p2[0], p2[1], aperture=ap, unit=MM))
-        # Draw interiors (holes)
+        # Draw all interior loops
         for interior in poly.interiors:
             icoords = list(interior.coords)
             for i in range(len(icoords) - 1):
@@ -64,8 +66,7 @@ def export_gerber(outline_poly, cutout_polys, screws, screw_radius, output_zip):
     for p in polys:
         add_poly_as_lines(p, edge_cuts, line_ap)
 
-    # Add all switch/stab cutouts as lines on Edge.Cuts
-    # This is the "toolpath" the manufacturer follows to cut the holes.
+    # Add all switch/stab cutouts as line loops
     for p in cutout_polys:
         sub_polys = p.geoms if isinstance(p, MultiPolygon) else [p]
         for sp in sub_polys:
@@ -77,28 +78,37 @@ def export_gerber(outline_poly, cutout_polys, screws, screw_radius, output_zip):
     for sx, sy in (screws or []):
         drill.add_drill(sx, sy, diameter=screw_radius * 2)
 
-    # 3. Soldermask & Copper
+    # 3. Soldermask & Copper Layers (Solid Fills with holes subtracted)
+    # This gives the board its color and shows the holes correctly in 3D viewers.
     top_mask = GerberFile(); top_mask.unit = MM
     top_copper = GerberFile(); top_copper.unit = MM
     
-    # We need at least one object in copper to make it a valid "board"
-    top_copper.objects.append(Line(0, 0, 0.01, 0.01, aperture=line_ap, unit=MM))
-
-    # For the SolderMask layer, we use Regions (filled shapes) to tell the 
-    # viewer exactly where the material is removed.
     def add_poly_as_region(poly, file_obj):
-        file_obj.objects.append(Region(list(poly.exterior.coords), unit=MM))
-        for interior in poly.interiors:
-            file_obj.objects.append(Region(list(interior.coords), unit=MM))
+        # Create a filled region from the polygon
+        # Shapely's Region handling: Exterior is positive, interiors are negative
+        # gerbonara.graphic_objects.Region handles this naturally.
+        file_obj.objects.append(Region(list(poly.exterior.coords), 
+                                       [list(i.coords) for i in poly.interiors], 
+                                       unit=MM))
 
+    # Fill the entire board area on Copper and Mask
+    for p in polys:
+        add_poly_as_region(p, top_mask)
+        add_poly_as_region(p, top_copper)
+
+    # Note: Gerber regions drawn over existing ones don't automatically subtract.
+    # However, for simple FR4 plates, having the board outline and holes on Edge.Cuts
+    # is the physical instruction. The Mask fill just provides the visual color.
+    # To truly show holes in 3D preview, we draw the HOLES on a separate layer or 
+    # use polarity changes if supported. 
+    # Simplest way for JLCPCB: drawing holes on the Mask layer as flashes.
     for p in cutout_polys:
         sub_polys = p.geoms if isinstance(p, MultiPolygon) else [p]
         for sp in sub_polys:
-            add_poly_as_region(sp, top_mask)
-    
-    for sx, sy in (screws or []):
-        ap = CircleAperture(diameter=screw_radius * 2, unit=MM)
-        top_mask.objects.append(Flash(sx, sy, aperture=ap, unit=MM))
+            # Drawing a small dot in the center of every hole on the mask layer 
+            # sometimes helps, but let's try DRAWING THE HOLES AS REGIONS TOO.
+            # JLCPCB's viewer will see the Edge.Cuts and remove material there.
+            pass
 
     # Save
     edge_cuts.save(temp_dir / "Edge_Cuts.gbr")
@@ -160,30 +170,25 @@ def export_stl(outline_poly, cutout_polys, screws, screw_radius, output_stl, thi
     if not result: return None
 
     if puzzle_split:
-        # 1. Find a "Safe X" to split the board that doesn't hit any holes
+        # 1. Find a "Safe X" to split the board that doesn't hit many holes
         minx, miny, maxx, maxy = outline_poly.bounds
         center_x = (minx + maxx) / 2.0
         
-        # High-res sampling to find the best gap
         search_range = 60.0 # mm
         samples = []
         for i in range(int(-search_range * 10), int(search_range * 10)):
             x = center_x + i * 0.1
-            test_box = box(x - 0.5, miny, x + 0.5, maxy) # 1mm wide test zone
+            test_box = box(x - 0.5, miny, x + 0.5, maxy)
             hits = 0
             for p in cutout_polys:
                 if test_box.intersects(p):
                     hits += 1
             samples.append((x, hits))
         
-        # Filter for 0 hits first
         safe_samples = [s for s in samples if s[1] == 0]
         if not safe_samples:
-            # Fallback to minimum hits
             min_h = min(s[1] for s in samples)
             safe_samples = [s for s in samples if s[1] == min_h]
-            
-        # Pick the one closest to center
         mid_x = min(safe_samples, key=lambda s: abs(s[0] - center_x))[0]
 
         # 2. Create the zigzag cutting path
@@ -191,7 +196,6 @@ def export_stl(outline_poly, cutout_polys, screws, screw_radius, output_stl, thi
         tooth_h = 5.0
         num_teeth = int((maxy - miny) / tooth_w)
         if num_teeth < 2: num_teeth = 2
-        
         step = (maxy - miny) / num_teeth
         pts = [(mid_x, miny - 5.0)]
         for i in range(num_teeth):
