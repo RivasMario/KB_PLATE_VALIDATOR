@@ -42,40 +42,34 @@ def export_gerber(outline_poly, cutout_polys, screws, screw_radius, output_zip):
     temp_dir.mkdir(parents=True)
 
     # 1. Edge.Cuts (Outline and all cutouts)
-    # Standard practice for FR4 plates is to put everything on Edge.Cuts.
     edge_cuts = GerberFile()
     edge_cuts.unit = MM
     line_ap = CircleAperture(diameter=0.15, unit=MM)
     
-    def add_poly_to_edge_cuts(poly, file_obj):
-        # We add the polygons as Regions (G36/G37) so CAM tools 
-        # definitely see them as "enclosed shapes to be cut".
-        # Exterior
-        file_obj.objects.append(Region(list(poly.exterior.coords), unit=MM))
-        # Interiors
+    def add_poly_as_lines(poly, file_obj, ap):
+        # Draw exterior
+        coords = list(poly.exterior.coords)
+        for i in range(len(coords) - 1):
+            p1, p2 = coords[i], coords[i+1]
+            file_obj.objects.append(Line(p1[0], p1[1], p2[0], p2[1], aperture=ap, unit=MM))
+        # Draw interiors (holes)
         for interior in poly.interiors:
-            file_obj.objects.append(Region(list(interior.coords), unit=MM))
+            icoords = list(interior.coords)
+            for i in range(len(icoords) - 1):
+                p1, p2 = icoords[i], icoords[i+1]
+                file_obj.objects.append(Line(p1[0], p1[1], p2[0], p2[1], aperture=ap, unit=MM))
 
     # Add main board outline
     polys = outline_poly.geoms if isinstance(outline_poly, MultiPolygon) else [outline_poly]
     for p in polys:
-        # For the outline, we usually want a loop of lines, not a filled region.
-        coords = list(p.exterior.coords)
-        for i in range(len(coords) - 1):
-            p1, p2 = coords[i], coords[i+1]
-            edge_cuts.objects.append(Line(p1[0], p1[1], p2[0], p2[1], aperture=line_ap, unit=MM))
-        # Also draw any internal holes in the outline island
-        for interior in p.interiors:
-            icoords = list(interior.coords)
-            for i in range(len(icoords) - 1):
-                edge_cuts.objects.append(Line(icoords[i][0], icoords[i][1], icoords[i+1][0], icoords[i+1][1], aperture=line_ap, unit=MM))
+        add_poly_as_lines(p, edge_cuts, line_ap)
 
-    # Add all switch/stab cutouts as Regions
+    # Add all switch/stab cutouts as lines on Edge.Cuts
+    # This is the "toolpath" the manufacturer follows to cut the holes.
     for p in cutout_polys:
         sub_polys = p.geoms if isinstance(p, MultiPolygon) else [p]
         for sp in sub_polys:
-            # Drawing a Region on Edge.Cuts tells the manufacturer "cut this area out"
-            add_poly_to_edge_cuts(sp, edge_cuts)
+            add_poly_as_lines(sp, edge_cuts, line_ap)
 
     # 2. NPTH_Drill.drl (Circular mounting holes)
     drill = ExcellonFile()
@@ -83,23 +77,24 @@ def export_gerber(outline_poly, cutout_polys, screws, screw_radius, output_zip):
     for sx, sy in (screws or []):
         drill.add_drill(sx, sy, diameter=screw_radius * 2)
 
-    # 3. Dummy mask and copper to satisfy the "Complete PCB" auto-detector
-    # But this time, we subtract the holes from the mask so they show up as "through" in the preview.
+    # 3. Soldermask & Copper
     top_mask = GerberFile(); top_mask.unit = MM
     top_copper = GerberFile(); top_copper.unit = MM
     
-    # Add a slightly smaller board shape to copper if you want a "ring", 
-    # but for a plain plate we just leave it empty or add a tiny dot 
-    # so the file is valid.
+    # We need at least one object in copper to make it a valid "board"
     top_copper.objects.append(Line(0, 0, 0.01, 0.01, aperture=line_ap, unit=MM))
 
-    # For SolderMask, we want it to cover the board but NOT the holes.
-    # Actually, Gerber Mask layers are usually "POSITIVE": you draw where you WANT NO MASK.
-    # So we should put all our holes in the mask layer too.
+    # For the SolderMask layer, we use Regions (filled shapes) to tell the 
+    # viewer exactly where the material is removed.
+    def add_poly_as_region(poly, file_obj):
+        file_obj.objects.append(Region(list(poly.exterior.coords), unit=MM))
+        for interior in poly.interiors:
+            file_obj.objects.append(Region(list(interior.coords), unit=MM))
+
     for p in cutout_polys:
         sub_polys = p.geoms if isinstance(p, MultiPolygon) else [p]
         for sp in sub_polys:
-            add_poly_to_edge_cuts(sp, top_mask)
+            add_poly_as_region(sp, top_mask)
     
     for sx, sy in (screws or []):
         ap = CircleAperture(diameter=screw_radius * 2, unit=MM)
