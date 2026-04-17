@@ -100,6 +100,8 @@ async def api_generate_plate(
         return JSONResponse({
             "svg": res["svg"],
             "dxf_id": out_path.name,
+            "gerber_id": Path(res["gerber_path"]).name if "gerber_path" in res else None,
+            "stl_id": Path(res["stl_path"]).name if "stl_path" in res else None,
             "metadata": {
                 "keys": res["keys"],
                 "plate_w": res["plate_w"],
@@ -114,18 +116,21 @@ async def api_generate_plate(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
 
-@app.get("/api/download/{dxf_id}")
-async def api_download_dxf(dxf_id: str):
-    # In a real app we'd map this ID to the secure temp directory.
-    # For this MVP, we find the file in the tempdir's parent.
+@app.get("/api/download/{file_id}")
+async def api_download_file(file_id: str):
     temp_parent = Path(tempfile.gettempdir())
-    # find the file
-    for p in temp_parent.glob(f"*/{dxf_id}"):
+    for p in temp_parent.glob(f"*/{file_id}"):
         if p.is_file():
+            # Set media type based on extension
+            media_type = "application/octet-stream"
+            if p.suffix == ".dxf": media_type = "application/dxf"
+            elif p.suffix == ".zip": media_type = "application/zip"
+            elif p.suffix == ".stl": media_type = "application/vnd.ms-pki.stl"
+            
             return FileResponse(
                 path=p,
-                filename="plate.dxf",
-                media_type="application/dxf"
+                filename=f"plate{p.suffix}",
+                media_type=media_type
             )
     raise HTTPException(status_code=404, detail="File not found")
 

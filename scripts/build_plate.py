@@ -457,7 +457,40 @@ def generate_plate(kle_path=None, out_path=None, pcb_path=None,
     issues = validate_screws(screws or [], screw_radius, outline_poly, cutouts, clearance)
     emit_dxf(out_path, cutouts, screws, outline_segments, screw_radius)
     svg = generate_svg_string(plate_w, plate_h, outline_poly, cutouts, screws, screw_radius)
-    return {"keys": len(keys), "plate_w": plate_w, "plate_h": plate_h, "screws": len(screws or []), "issues": issues, "out_path": out_path, "svg": svg}
+
+    # Optional exports
+    try:
+        from . import exporters
+    except ImportError:
+        import exporters
+
+    res = {
+        "keys": len(keys),
+        "plate_w": plate_w,
+        "plate_h": plate_h,
+        "screws": len(screws or []),
+        "issues": issues,
+        "out_path": out_path,
+        "svg": svg
+    }
+
+    # Generate Gerber ZIP if requested
+    gerber_path = str(Path(out_path).with_suffix('.zip'))
+    try:
+        exporters.export_gerber(outline_poly, cutouts, screws, screw_radius, gerber_path)
+        res["gerber_path"] = gerber_path
+    except Exception as e:
+        print(f"Gerber export failed: {e}")
+
+    # Generate STL if requested (usually always for web)
+    stl_path = str(Path(out_path).with_suffix('.stl'))
+    try:
+        exporters.export_stl(outline_poly, cutouts, screws, screw_radius, stl_path)
+        res["stl_path"] = stl_path
+    except Exception as e:
+        print(f"STL export failed: {e}")
+
+    return res
 
 
 def main():

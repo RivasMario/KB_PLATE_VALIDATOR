@@ -143,7 +143,11 @@
                 </div>
 
                 <div id="validation-notice" class="notice"></div>
-                <p><a href="#" id="download-link" class="primary-btn">Download DXF</a></p>
+                <div class="download-buttons" style="display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap;">
+                    <a href="#" id="download-link" class="primary-btn">Download DXF</a>
+                    <a href="#" id="download-gerber" class="primary-btn" style="background-color: #059669;">Download Gerber (JLCPCB)</a>
+                    <a href="#" id="download-stl" class="primary-btn" style="background-color: #7c3aed;">Download 3D (STL)</a>
+                </div>
             </div>
 
             <div id="error-message" class="error hidden"></div>

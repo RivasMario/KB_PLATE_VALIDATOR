@@ -13,6 +13,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const results = document.getElementById('results');
     const errorMsg = document.getElementById('error-message');
     const downloadLink = document.getElementById('download-link');
+    const downloadGerber = document.getElementById('download-gerber');
+    const downloadStl = document.getElementById('download-stl');
 
     let currentTab = 'kle';
 
@@ -136,11 +138,21 @@ document.addEventListener('DOMContentLoaded', () => {
             previewContainer.innerHTML = data.svg;
 
             // Handle file download
-            const downloadUrl = `/api/download/${data.dxf_id}`;
-            downloadLink.href = downloadUrl;
-            downloadLink.onclick = (e) => {
-                // let default behavior happen for regular click
-            };
+            downloadLink.href = `/api/download/${data.dxf_id}`;
+            
+            if (data.gerber_id) {
+                downloadGerber.href = `/api/download/${data.gerber_id}`;
+                downloadGerber.classList.remove('hidden');
+            } else {
+                downloadGerber.classList.add('hidden');
+            }
+
+            if (data.stl_id) {
+                downloadStl.href = `/api/download/${data.stl_id}`;
+                downloadStl.classList.remove('hidden');
+            } else {
+                downloadStl.classList.add('hidden');
+            }
 
             results.classList.remove('hidden');
 

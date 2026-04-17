@@ -89,14 +89,17 @@ VALIDATOR: all screws inside plate, none overlapping cutouts
 | `--fillet` | 0.0 | Corner fillet radius for plate outline (mm) |
 | `--clearance` | 0.5 | Min screw-to-cutout clearance (mm) |
 | `--snap-screws` | off | Snap each screw X to midpoint between nearest two key columns (fixes local PCB-vs-KLE drift) |
-| `--screw-preset` | None | Predefined screw patterns: `4corners`, `6perimeter`, `grid3x2`, `grid4x2`, `between_rows` |
+| `--screw-preset` | None | Predefined screw patterns: `4corners`, `6perimeter`, `grid3x2`, `grid4x2`, `between_rows`, `poker` |
 | `--screw-custom` | None | Manual screws: `"x1,y1;x2,y2;..."` |
 | `--no-auto-align` | off | Skip brute-force; use raw KiCad coords + manual nudge |
 | `--pcb-dx` / `--pcb-dy` | 0 | Manual nudge after auto-align |
 
 ## Web Application
 
-The KB Plate Validator can also be run as a web application with a modern, drag-and-drop interface.
+The KB Plate Validator can also be run as a web application with a modern, drag-and-drop interface. It supports instant **SVG Preview** and multi-format exports:
+* **DXF**: Standard CAD format for SendCutSend and laser cutting.
+* **Gerber (ZIP)**: Production-ready files for JLCPCB and PCB manufacturers.
+* **3D (STL)**: Extruded 1.5mm solids for 3D printing and CAD modeling.
 
 ### Running via Docker (Recommended)
 
