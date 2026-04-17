@@ -40,11 +40,21 @@ pip install -r requirements.txt
 Single-script plate generator — no FreeCAD, no manual DXF merging.
 
 ```bash
-python3 scripts/build_plate.py \
+python scripts/build_plate.py \
   --kle "path/to/KLE.json" \
   --pcb "path/to/board.kicad_pcb" \
   --out plate.dxf \
-  --pad 5
+  --pad 0 \
+  --snap-screws
+```
+
+**SKYWAY-96 example (tested, validated):**
+```bash
+python scripts/build_plate.py \
+  --kle skyway96_kle.json \
+  --pcb "../SKYWAY-96/KiCAD Source Files/rivasmario 96% Hotswap Rp2040.kicad_pcb" \
+  --out output/skyway96_plate.dxf \
+  --pad 0 --snap-screws
 ```
 
 What it does:
@@ -75,10 +85,44 @@ VALIDATOR: all screws inside plate, none overlapping cutouts
 | `--stab-type` | 0 | 0=cherry+costar, 1=cherry, 2=costar |
 | `--screw-diameter` | 2.4 | mm. 2.2=close-fit, 2.4=M2 free-fit, 2.6=loose |
 | `--kerf` | 0.0 | Laser kerf compensation (mm) |
-| `--pad` | 0.0 | Plate padding around keys (mm) |
+| `--pad` | 0.0 | Plate padding around keys (mm). 96% cases: 0-1 typical |
+| `--fillet` | 0.0 | Corner fillet radius for plate outline (mm) |
 | `--clearance` | 0.5 | Min screw-to-cutout clearance (mm) |
+| `--snap-screws` | off | Snap each screw X to midpoint between nearest two key columns (fixes local PCB-vs-KLE drift) |
+| `--screw-preset` | None | Predefined screw patterns: `4corners`, `6perimeter`, `grid3x2`, `grid4x2`, `between_rows` |
+| `--screw-custom` | None | Manual screws: `"x1,y1;x2,y2;..."` |
 | `--no-auto-align` | off | Skip brute-force; use raw KiCad coords + manual nudge |
 | `--pcb-dx` / `--pcb-dy` | 0 | Manual nudge after auto-align |
+
+### Mode B: Generate Plate from KLE only (no PCB)
+
+If you don't have a KiCad file, you can still generate a functional plate with standard screw patterns:
+
+```bash
+python scripts/build_plate.py \
+  --kle "path/to/KLE.json" \
+  --out plate.dxf \
+  --screw-preset 6perimeter \
+  --fillet 2.0
+```
+
+**Switch type reference (kb_builder spec):**
+
+| Type | Geometry | Use case |
+|------|----------|---------|
+| 0 | Plain 14×14mm square | Simplest, no retention |
+| 1 | MX+Alps (side tab notches) | Most common, holds both MX + Alps stems |
+| 2 | MX openable (top/bottom wings on one axis) | Swap switches without desoldering |
+| 3 | MX rotatable (wings on both axes) | Any-orientation switch install |
+
+**Stab type reference:**
+| Type | Geometry | Use case |
+|------|----------|---------|
+| 0 | Cherry modded for Costar | Takes both Cherry and Costar stabs |
+| 1 | Cherry only | Tight cutout, Cherry-spec stabs only |
+| 2 | Costar only | Two separate wire slots |
+
+**SendCutSend compatibility:** Polygons emit without duplicate closing points (SendCutSend rejects zero-length segments as "open entities"). Test file at `output/skyway96_plate.dxf`.
 
 ### Legacy: Add PCB Elements to Existing Plate DXF (FreeCAD)
 
@@ -208,10 +252,12 @@ SCREW_COMBO
 **Latest Work (April 2026):**
 - ✅ `build_plate.py` — one-shot plate DXF generator, no FreeCAD required
 - ✅ KLE → DXF: plate outline, switch cutouts (4 types), stab cutouts (3 types)
-- ✅ PCB-to-plate registration via switch-footprint nearest-neighbor matching (sub-0.1mm accuracy on SKYWAY-96)
-- ✅ Edge cutouts rendered as true U-arcs cut into the plate outline
+- ✅ PCB-to-plate registration via switch-footprint nearest-neighbor matching
+- ✅ Edge cutouts rendered as **U-shaped notches**: straight walls from plate edge to PCB arc position, semicircle at inner end (width = hole diameter)
+- ✅ `--snap-screws`: fixes local PCB-vs-KLE drift when key counts differ per row (e.g., SKYWAY-96 PCB has 99 keys vs KLE 100)
+- ✅ SendCutSend-compatible output (no duplicate closing vertices)
 - ✅ Built-in validator: screw clearance + cutout-overlap check
-- ⏳ Next: fillet corners, LWPOLYLINE+bulge for arcs (single-path outline), support for non-standard stab positions
+- ⏳ Next: fillet corners, LWPOLYLINE+bulge for arcs (single-path outline), plate outline matching PCB Edge.Cuts shape (not just bounding box)
 
 **Previous: FreeCAD-based pipeline (superseded):**
 - ✅ FreeCAD PCB element injection pipeline working
