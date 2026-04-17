@@ -46,9 +46,15 @@ async def api_generate_plate(
     screw_inset: float = Form(5.0),
     split: bool = Form(False),
     puzzle_split: bool = Form(False),
+    gen_dxf: bool = Form(True),
+    gen_gerber: bool = Form(True),
+    gen_stl: bool = Form(True),
 ):
     if not kle_file and not kle_text:
         raise HTTPException(status_code=400, detail="Must provide either KLE file or KLE JSON text.")
+
+    if not any([gen_dxf, gen_gerber, gen_stl]):
+        raise HTTPException(status_code=400, detail="At least one generation format must be selected.")
 
     # Create a temporary directory for the session
     temp_dir = Path(tempfile.mkdtemp())
@@ -86,24 +92,20 @@ async def api_generate_plate(
                 screw_custom=screw_custom if screw_custom else None,
                 screw_inset=screw_inset,
                 split=split,
-                puzzle_split=puzzle_split
+                puzzle_split=puzzle_split,
+                gen_dxf=gen_dxf,
+                gen_gerber=gen_gerber,
+                gen_stl=gen_stl
             )
         except Exception as e:
             raise HTTPException(status_code=400, detail=str(e))
 
-        # Check if the output file was created
-        if not out_path.exists():
-            raise HTTPException(status_code=500, detail="DXF generation failed (output file missing)")
-
         # Return JSON with SVG and download link
-        # Instead of cleaning up immediately, we store the temp_dir path in a global dict
-        # or just rely on OS temp cleanup. For this MVP, we just leave it in temp_dir.
-        
         return JSONResponse({
             "svg": res["svg"],
-            "dxf_id": out_path.name,
-            "gerber_id": Path(res["gerber_path"]).name if "gerber_path" in res else None,
-            "stl_id": Path(res["stl_path"]).name if "stl_path" in res else None,
+            "dxf_id": out_path.name if gen_dxf and out_path.exists() else None,
+            "gerber_id": Path(res["gerber_path"]).name if res.get("gerber_path") else None,
+            "stl_id": Path(res["stl_path"]).name if res.get("stl_path") else None,
             "metadata": {
                 "keys": res["keys"],
                 "plate_w": res["plate_w"],

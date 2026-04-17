@@ -118,7 +118,7 @@ def rotate_pt(px, py, ang, cx, cy):
     rad = math.radians(ang)
     cos_a, sin_a = math.cos(rad), math.sin(rad)
     dx, dy = px - cx, py - cy
-    # Clockwise rotation in Y-down system (standard Trig formula is correct here)
+    # Clockwise rotation in Y-down system
     return cx + (dx * cos_a - dy * sin_a), cy + (dx * sin_a + dy * cos_a)
 
 
@@ -154,7 +154,6 @@ def parse_kle(layout):
         for item in row:
             if isinstance(item, dict):
                 pending = dict(item) if pending is None else {**pending, **item}
-                # rx/ry reset the cursor to the new origin. r does NOT reset the cursor.
                 if 'rx' in item: rx = item['rx']
                 if 'ry' in item: ry = item['ry']
                 if 'rx' in item or 'ry' in item:
@@ -401,7 +400,8 @@ def generate_plate(kle_path=None, out_path=None, pcb_path=None,
                    screw_diameter=2.4, pcb_dx=0.0, pcb_dy=0.0,
                    no_auto_align=False, clearance=0.5, snap_screws=False,
                    fillet=0.0, screw_preset=None, screw_custom=None,
-                   screw_inset=5.0, kle_text=None, split=False, puzzle_split=False):
+                   screw_inset=5.0, kle_text=None, split=False, puzzle_split=False,
+                   gen_dxf=True, gen_gerber=True, gen_stl=True):
     if kle_text: raw_text = kle_text
     elif kle_path: raw_text = Path(kle_path).read_text(encoding='utf-8')
     else: raise ValueError("No KLE input provided")
@@ -409,60 +409,69 @@ def generate_plate(kle_path=None, out_path=None, pcb_path=None,
     sanitized = re.sub(r'([{,]\s*)([a-zA-Z_]\w*)\s*:', r'\1"\2":', raw_text)
     keys, key_w, key_h = parse_kle(json.loads(sanitized))
     
-    plate_w = key_w + 2 * pad
-    plate_h = key_h + 2 * pad
-    
-    cutouts = build_entities(keys, pad=pad, kerf=kerf, switch_type=switch_type, stab_type=stab_type)
+    # 1. Build entities at raw cluster coordinates (0,0 based)
+    cutouts = build_entities(keys, pad=0.0, kerf=kerf, switch_type=switch_type, stab_type=stab_type)
+
     screw_radius = screw_diameter / 2.0
     screws = None
-    if screw_custom: screws = screw_presets.custom_from_string(screw_custom, plate_w, plate_h)
+    if screw_custom: 
+        screws = screw_presets.custom_from_string(screw_custom, key_w, key_h)
     elif screw_preset:
         fn = screw_presets.PRESETS[screw_preset]
-        screws = fn(keys, plate_w, pad, screw_inset, U1) if screw_preset == 'between_rows' else fn(plate_w, plate_h, inset=screw_inset)
+        screws = fn(keys, key_w, 0.0, screw_inset, U1) if screw_preset == 'between_rows' else fn(key_w, key_h, inset=screw_inset)
     elif pcb_path:
         screws = find_kicad_screw_holes(pcb_path)
-        pcb_sw, kle_sw = find_kicad_switches(pcb_path), [(k['cx_u']*U1+pad, k['cy_u']*U1+pad) for k in keys]
+        pcb_sw, kle_sw = find_kicad_switches(pcb_path), [(k['cx_u']*U1, k['cy_u']*U1) for k in keys]
         params, apply = solve_pcb_transform(pcb_sw, kle_sw)
         nudge = lambda pts: [(x + pcb_dx, y + pcb_dy) for x, y in apply(pts)]
         screws = nudge(screws)
         if snap_screws: screws = snap_screws_to_grid(screws, kle_sw)
 
-    outline_segments = []
-    if pcb_path:
-        # Use full Edge.Cuts if available
-        pcb_outline = find_all_edge_cuts(pcb_path)
-        if pcb_outline:
-            nudged_apply = lambda pts: [(x + pcb_dx, y + pcb_dy) for x, y in apply(pts)]
-            outline_segments = [transform_segment(seg, nudged_apply) for seg in pcb_outline]
-            outline_poly = Polygon(discretize_segments(outline_segments))
-        else:
-            outline_segments = build_outline_segments(plate_w, plate_h, fillet=fillet)
-            outline_poly = Polygon(discretize_segments(outline_segments))
-    elif split:
+    # 2. Build the plate outline
+    if split:
         key_boxes = []
         for k in keys:
-            cx, cy = k['cx_u'] * U1 + pad, k['cy_u'] * U1 + pad
+            cx, cy = k['cx_u'] * U1, k['cy_u'] * U1
             angle = k.get('_r_ccw', 0)
             b = box(cx - U1/2, cy - U1/2, cx + U1/2, cy + U1/2)
             if angle: b = affinity.rotate(b, angle, origin=(cx, cy))
             key_boxes.append(b)
         outline_poly = unary_union(key_boxes).buffer(pad, join_style=1)
         if fillet > 0: outline_poly = outline_poly.buffer(-fillet).buffer(fillet)
-        def poly_to_segs(p):
-            pts = list(p.exterior.coords)
-            return [('line', pts[i], pts[i+1]) for i in range(len(pts)-1)]
-        if isinstance(outline_poly, Polygon): outline_segments = poly_to_segs(outline_poly)
-        elif isinstance(outline_poly, MultiPolygon):
-            for p in outline_poly.geoms: outline_segments.extend(poly_to_segs(p))
     else:
-        outline_segments = build_outline_segments(plate_w, plate_h, fillet=fillet)
-        outline_poly = Polygon(discretize_segments(outline_segments))
+        outline_poly = box(-pad, -pad, key_w + pad, key_h + pad)
+        if fillet > 0: outline_poly = outline_poly.buffer(-fillet).buffer(fillet)
 
+    # 3. Final Alignment: Shift everything so the board min_bounds is at (0,0)
+    # The actual padding margin is maintained geometrically.
+    minx, miny, maxx, maxy = outline_poly.bounds
+    shift_x, shift_y = -minx, -miny
+    outline_poly = affinity.translate(outline_poly, xoff=shift_x, yoff=shift_y)
+    cutouts = [affinity.translate(c, xoff=shift_x, yoff=shift_y) for c in cutouts]
+    if screws: screws = [(x+shift_x, y+shift_y) for x,y in screws]
+    
+    def poly_to_segs(p):
+        pts = list(p.exterior.coords)
+        segs = [('line', pts[i], pts[i+1]) for i in range(len(pts)-1)]
+        for interior in p.interiors:
+            ipts = list(interior.coords)
+            segs.extend([('line', ipts[j], ipts[j+1]) for j in range(len(ipts)-1)])
+        return segs
+    
+    outline_segments = []
+    if isinstance(outline_poly, Polygon): outline_segments = poly_to_segs(outline_poly)
+    elif isinstance(outline_poly, MultiPolygon):
+        for p in outline_poly.geoms: outline_segments.extend(poly_to_segs(p))
+
+    # 4. Export
+    plate_w_final, plate_h_final = outline_poly.bounds[2], outline_poly.bounds[3]
     issues = validate_screws(screws or [], screw_radius, outline_poly, cutouts, clearance)
-    emit_dxf(out_path, cutouts, screws, outline_segments, screw_radius)
-    svg = generate_svg_string(plate_w, plate_h, outline_poly, cutouts, screws, screw_radius)
+    
+    if gen_dxf:
+        emit_dxf(out_path, cutouts, screws, outline_segments, screw_radius)
+        
+    svg = generate_svg_string(plate_w_final, plate_h_final, outline_poly, cutouts, screws, screw_radius)
 
-    # Optional exports
     try:
         from . import exporters
     except ImportError:
@@ -470,29 +479,35 @@ def generate_plate(kle_path=None, out_path=None, pcb_path=None,
 
     res = {
         "keys": len(keys),
-        "plate_w": plate_w,
-        "plate_h": plate_h,
+        "plate_w": plate_w_final,
+        "plate_h": plate_h_final,
         "screws": len(screws or []),
         "issues": issues,
-        "out_path": out_path,
-        "svg": svg
+        "out_path": out_path if gen_dxf else None,
+        "svg": svg,
+        "gerber_path": None,
+        "stl_path": None
     }
 
-    # Generate Gerber ZIP if requested
-    gerber_path = str(Path(out_path).with_suffix('.zip'))
-    try:
-        exporters.export_gerber(outline_poly, cutouts, screws, screw_radius, gerber_path)
-        res["gerber_path"] = gerber_path
-    except Exception as e:
-        print(f"Gerber export failed: {e}")
+    if gen_gerber:
+        gerber_path = str(Path(out_path).with_suffix('.zip'))
+        try:
+            exporters.export_gerber(outline_poly, cutouts, screws, screw_radius, gerber_path)
+            res["gerber_path"] = gerber_path
+        except Exception as e:
+            import traceback
+            print(f"Gerber export failed: {e}")
+            traceback.print_exc()
 
-    # Generate STL if requested (usually always for web)
-    stl_path = str(Path(out_path).with_suffix('.stl'))
-    try:
-        exporters.export_stl(outline_poly, cutouts, screws, screw_radius, stl_path)
-        res["stl_path"] = stl_path
-    except Exception as e:
-        print(f"STL export failed: {e}")
+    if gen_stl:
+        stl_path = str(Path(out_path).with_suffix('.stl'))
+        try:
+            exporters.export_stl(outline_poly, cutouts, screws, screw_radius, stl_path, puzzle_split=puzzle_split)
+            res["stl_path"] = stl_path
+        except Exception as e:
+            import traceback
+            print(f"STL export failed: {e}")
+            traceback.print_exc()
 
     return res
 

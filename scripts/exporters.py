@@ -28,12 +28,12 @@ except ImportError:
     cq = None
 
 from shapely.geometry import Polygon, MultiPolygon, Point, box
+from shapely.ops import unary_union
 
 def export_gerber(outline_poly, cutout_polys, screws, screw_radius, output_zip):
     """
     Export plate geometry to a Gerber ZIP file compatible with JLCPCB.
-    Ensures that switch holes and stabilizers are correctly identified as cutouts.
-    Adds solid board fills to Mask and Copper layers for correct 3D preview.
+    Uses high-precision line paths for Edge.Cuts and explicit subtraction for Mask/Copper.
     """
     if GerberFile is None:
         raise ImportError("gerbonara not fully functional or installed")
@@ -78,37 +78,37 @@ def export_gerber(outline_poly, cutout_polys, screws, screw_radius, output_zip):
     for sx, sy in (screws or []):
         drill.add_drill(sx, sy, diameter=screw_radius * 2)
 
-    # 3. Soldermask & Copper Layers (Solid Fills with holes subtracted)
-    # This gives the board its color and shows the holes correctly in 3D viewers.
+    # 3. Soldermask & Copper Layers
+    # We want a solid board WITH HOLES REMOVED.
     top_mask = GerberFile(); top_mask.unit = MM
     top_copper = GerberFile(); top_copper.unit = MM
     
-    def add_poly_as_region(poly, file_obj):
-        # Create a filled region from the polygon
-        # Shapely's Region handling: Exterior is positive, interiors are negative
-        # gerbonara.graphic_objects.Region handles this naturally.
-        file_obj.objects.append(Region(list(poly.exterior.coords), 
-                                       [list(i.coords) for i in poly.interiors], 
-                                       unit=MM))
-
-    # Fill the entire board area on Copper and Mask
-    for p in polys:
-        add_poly_as_region(p, top_mask)
-        add_poly_as_region(p, top_copper)
-
-    # Note: Gerber regions drawn over existing ones don't automatically subtract.
-    # However, for simple FR4 plates, having the board outline and holes on Edge.Cuts
-    # is the physical instruction. The Mask fill just provides the visual color.
-    # To truly show holes in 3D preview, we draw the HOLES on a separate layer or 
-    # use polarity changes if supported. 
-    # Simplest way for JLCPCB: drawing holes on the Mask layer as flashes.
+    # Union all cutouts and screws into a single "Holes" geometry
+    hole_geoms = []
     for p in cutout_polys:
-        sub_polys = p.geoms if isinstance(p, MultiPolygon) else [p]
-        for sp in sub_polys:
-            # Drawing a small dot in the center of every hole on the mask layer 
-            # sometimes helps, but let's try DRAWING THE HOLES AS REGIONS TOO.
-            # JLCPCB's viewer will see the Edge.Cuts and remove material there.
-            pass
+        hole_geoms.append(p)
+    for sx, sy in (screws or []):
+        hole_geoms.append(Point(sx, sy).buffer(screw_radius))
+    
+    all_holes = unary_union(hole_geoms)
+    
+    # Create the final "Material" geometry by subtracting holes from the outline
+    material_poly = outline_poly.difference(all_holes)
+    
+    def add_poly_as_region(poly, file_obj):
+        if isinstance(poly, Polygon):
+            file_obj.objects.append(Region(list(poly.exterior.coords), 
+                                           [list(i.coords) for i in poly.interiors], 
+                                           unit=MM))
+        elif isinstance(poly, MultiPolygon):
+            for p in poly.geoms:
+                file_obj.objects.append(Region(list(p.exterior.coords), 
+                                               [list(i.coords) for i in p.interiors], 
+                                               unit=MM))
+
+    # Draw the physical material on Mask and Copper
+    add_poly_as_region(material_poly, top_mask)
+    add_poly_as_region(material_poly, top_copper)
 
     # Save
     edge_cuts.save(temp_dir / "Edge_Cuts.gbr")
@@ -178,7 +178,7 @@ def export_stl(outline_poly, cutout_polys, screws, screw_radius, output_stl, thi
         samples = []
         for i in range(int(-search_range * 10), int(search_range * 10)):
             x = center_x + i * 0.1
-            test_box = box(x - 0.5, miny, x + 0.5, maxy)
+            test_box = box(x - 0.5, miny, x + 0.5, maxy) # 1mm wide test zone
             hits = 0
             for p in cutout_polys:
                 if test_box.intersects(p):
@@ -196,10 +196,12 @@ def export_stl(outline_poly, cutout_polys, screws, screw_radius, output_stl, thi
         tooth_h = 5.0
         num_teeth = int((maxy - miny) / tooth_w)
         if num_teeth < 2: num_teeth = 2
+        
         step = (maxy - miny) / num_teeth
         pts = [(mid_x, miny - 5.0)]
         for i in range(num_teeth):
             y = miny + i * step
+            # Trapezoid shape
             pts.append((mid_x, y + step*0.2))
             pts.append((mid_x + tooth_h, y + step*0.4))
             pts.append((mid_x + tooth_h, y + step*0.6))

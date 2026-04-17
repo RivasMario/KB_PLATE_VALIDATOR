@@ -108,6 +108,22 @@ document.addEventListener('DOMContentLoaded', () => {
         formData.set('snap_screws', currentTab === 'pcb' ? 'true' : 'false');
         formData.set('split', document.getElementById('split').checked ? 'true' : 'false');
         formData.set('puzzle_split', document.getElementById('puzzle_split').checked ? 'true' : 'false');
+        
+        // Format selection
+        const genDxf = document.getElementById('gen_dxf').checked;
+        const genGerber = document.getElementById('gen_gerber').checked;
+        const genStl = document.getElementById('gen_stl').checked;
+        
+        if (!genDxf && !genGerber && !genStl) {
+            alert('Please select at least one generation format.');
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'Generate Plate Files';
+            return;
+        }
+        
+        formData.set('gen_dxf', genDxf ? 'true' : 'false');
+        formData.set('gen_gerber', genGerber ? 'true' : 'false');
+        formData.set('gen_stl', genStl ? 'true' : 'false');
 
         try {
             const response = await fetch('/api/generate', {
@@ -163,7 +179,7 @@ document.addEventListener('DOMContentLoaded', () => {
             errorMsg.classList.remove('hidden');
         } finally {
             submitBtn.disabled = false;
-            submitBtn.textContent = 'Generate DXF';
+            submitBtn.textContent = 'Generate Plate Files';
         }
     });
 });
