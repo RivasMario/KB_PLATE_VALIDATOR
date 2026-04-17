@@ -4,36 +4,34 @@
 
 ### Just-Completed Work
 
+- **Hole-Aware Puzzle Split (for 3D Printing)**: 
+  - Upgraded the **Puzzle Split** logic to be "aware" of switch and stabilizer holes.
+  - The script now automatically scans the center of your board to find a **"Safe Zone"** (a vertical gap between key columns).
+  - It prioritizes splitting through empty space, ensuring that **no switch holes are cut in half**, which drastically improves the mechanical strength of 3D printed plates.
 - **Fixed Gerber Export (JLCPCB-Ready)**: 
-  - Switched from a single file to a **full PCB layer stack** (Edge.Cuts, NPTH Drill, Mask, Copper).
-  - This fixes the "solid block" issue on JLCPCB's viewer. The holes and outline are now correctly identified as physical board features.
-- **STL Puzzle Split (for 3D Printing)**: 
-  - Added an optional **"Puzzle Split"** feature for STLs.
-  - Large plates are automatically split down the middle with a **trapezoidal zigzag joint**.
-  - The two halves are saved in a single STL file but moved slightly apart (5mm), allowing you to print them separately on smaller beds and lock them together securely.
+  - Switched to a **full PCB layer stack** (Edge.Cuts, NPTH Drill, Mask, Copper).
+  - This ensures that JLCPCB's online viewer correctly renders the plate with all holes and slots, fixing the "solid block" issue.
 - **Form-Fitting Split Mode**: 
-  - Generates tight, professional "islands" around rotated/split clusters.
-  - Unions key footprints and buffers them by the specified `Plate Padding`.
+  - Generates tight, professional "islands" around rotated/split clusters for Ergo/Alice boards.
 - **Enhanced Web UI**:
-  - Added checkboxes for **"Split Plates"** and **"Puzzle Split STL"**.
-  - Multi-format download buttons (DXF, Gerber, STL).
+  - Instant SVG Preview, one-click multi-format downloads.
 
 ### Recent fixes (this session):
-1. **Gerber Recognition**: providing dummy copper and solid soldermask layers ensures manufacturing automated systems treat the FR4 plate as a real PCB.
-2. **Zigzag Solid Math**: used CadQuery's boolean intersection logic to cleanly slice the extruded solid with a custom tooth path.
-3. **Continuity Fix**: `emit_dxf` now correctly identifies and outputs separate closed loops for split/island layouts.
+1. **Intelligent Slicing**: uses high-resolution geometry sampling to find the widest possible X-gap near the board center for the puzzle joint.
+2. **Gerber Recognition**: providing dummy copper and solid soldermask layers ensures manufacturing systems treat the FR4 plate as a real PCB.
+3. **Continuity Fix**: `emit_dxf` now outputs separate closed loops for split/island layouts.
 
 ### 1. Web stack details
 Deployable as a single container via the root `Dockerfile`.
 
 ### 2. Next Technical Steps (Future AI)
-- **Configurable Split X**: Allow users to choose the X-coordinate for the puzzle split instead of defaulting to center.
-- **Drill Metadata**: Add tool sizes to the Excellon Drill file for even better compatibility.
-- **Advanced Puzzle Shapes**: Add options for different joint types (e.g., bone-shaped, dovetail).
+- **Manual Split Line**: Allow users to click a location in the UI to manually define the split X-coordinate.
+- **Bone Joints**: Implement "Dog-bone" style joints for even higher tensile strength.
+- **ISO Enter Cutout**: Add the specific "L-shaped" switch cutout to `cutouts.py`.
 
 **Files to look at first**:
-- `scripts/exporters.py`: Gerber stack and STL split logic.
-- `scripts/build_plate.py`: Core generation and routing logic.
+- `scripts/exporters.py`: Gerber stack and Hole-Aware STL split logic.
+- `scripts/build_plate.py`: Core logic.
 - `app/static/index.html`: UI controls.
 
 **Do NOT regenerate `add_holes_freecad.py` work** — user has moved past it.

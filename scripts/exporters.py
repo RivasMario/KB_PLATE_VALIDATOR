@@ -146,12 +146,33 @@ def export_stl(outline_poly, cutout_polys, screws, screw_radius, output_stl, thi
     if not result: return None
 
     if puzzle_split:
-        # 1. Find the split X (center of board)
+        # 1. Find a "Safe X" to split the board that doesn't hit any holes
         minx, miny, maxx, maxy = outline_poly.bounds
-        mid_x = (minx + maxx) / 2.0
+        center_x = (minx + maxx) / 2.0
         
+        # High-res sampling to find the best gap
+        search_range = 60.0 # mm
+        samples = []
+        for i in range(int(-search_range * 10), int(search_range * 10)):
+            x = center_x + i * 0.1
+            test_box = box(x - 0.5, miny, x + 0.5, maxy) # 1mm wide test zone
+            hits = 0
+            for p in cutout_polys:
+                if test_box.intersects(p):
+                    hits += 1
+            samples.append((x, hits))
+        
+        # Filter for 0 hits first
+        safe_samples = [s for s in samples if s[1] == 0]
+        if not safe_samples:
+            # Fallback to minimum hits
+            min_h = min(s[1] for s in samples)
+            safe_samples = [s for s in samples if s[1] == min_h]
+            
+        # Pick the one closest to center
+        mid_x = min(safe_samples, key=lambda s: abs(s[0] - center_x))[0]
+
         # 2. Create the zigzag cutting path
-        # We'll make a vertical path with trapezoidal teeth
         tooth_w = 10.0
         tooth_h = 5.0
         num_teeth = int((maxy - miny) / tooth_w)
