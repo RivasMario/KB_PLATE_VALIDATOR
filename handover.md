@@ -7,11 +7,10 @@
 KB_PLATE_VALIDATOR - **FULLY AUTOMATED** pipeline for validating keyboard plate DXF files and adding PCB elements (screw holes, edge cutouts) using FreeCAD.
 
 **Current State**: 
-- ✅ **Automated DXF Export**: The pipeline now fully automates the DXF export process from FreeCAD. No manual UI interaction is required.
-- ✅ **Robust Macro Logic**: The FreeCAD macro now includes multi-method fallbacks (using `importDXF` directly) for both importing the plate DXF and exporting the final merged result in headless mode.
-- ✅ **LWPOLYLINE Support**: Rectangle detection algorithm in validation scripts now supports both `LINE` and `LWPOLYLINE` entities, fixing issues where "fresh" DXF files showed zero holes.
-- ✅ **Flexible Validation**: `scripts/validate_new_plate.py` now accepts a DXF path as a command-line argument.
-- ✅ **Agent Documentation**: Created `GEMINI.md` for agent-specific workflows and troubleshooting.
+- ✅ **Mirror-Y Alignment Found**: The definitive transformation is Mirror-Y with `dx = -52, dy = -71`.
+- ✅ **11/11 Screw Holes In-Bounds**: All mounting holes now land correctly within the plate perimeter.
+- ⚠️ **Bottom-Right Overlaps**: 4 screw holes still overlap switch/stabilizer cutouts (marginal conflicts ~0.6mm). These locations may require the screw to pass through the switch hole or a minor PCB/Plate layout adjustment.
+- ✅ **Improved Tolerances**: Screw holes increased to 3.0mm diameter; edge cutouts increased to 2.0mm.
 
 **Latest Test File**: `cc1e0e052d37d91e9d1f8f9d7166eea779a44e9f_switch.dxf` 
 **Output DXF**: `96plate_FREECAD_WITH_PCB.dxf` (Merged DXF containing original plate + 15 PCB elements)
