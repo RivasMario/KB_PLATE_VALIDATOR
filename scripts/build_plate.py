@@ -401,7 +401,7 @@ def generate_plate(kle_path=None, out_path=None, pcb_path=None,
                    screw_diameter=2.4, pcb_dx=0.0, pcb_dy=0.0,
                    no_auto_align=False, clearance=0.5, snap_screws=False,
                    fillet=0.0, screw_preset=None, screw_custom=None,
-                   screw_inset=5.0, kle_text=None, split=False):
+                   screw_inset=5.0, kle_text=None, split=False, puzzle_split=False):
     if kle_text: raw_text = kle_text
     elif kle_path: raw_text = Path(kle_path).read_text(encoding='utf-8')
     else: raise ValueError("No KLE input provided")

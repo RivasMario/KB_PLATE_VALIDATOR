@@ -104,8 +104,10 @@ document.addEventListener('DOMContentLoaded', () => {
         const formData = new FormData(form);
         
         // Ensure booleans are handled correctly for FastAPI Form
-        formData.set('no_auto_align', 'false'); // Example placeholder
+        formData.set('no_auto_align', 'false'); 
         formData.set('snap_screws', currentTab === 'pcb' ? 'true' : 'false');
+        formData.set('split', document.getElementById('split').checked ? 'true' : 'false');
+        formData.set('puzzle_split', document.getElementById('puzzle_split').checked ? 'true' : 'false');
 
         try {
             const response = await fetch('/api/generate', {

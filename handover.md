@@ -4,42 +4,36 @@
 
 ### Just-Completed Work
 
-- **Gerber & 3D (STL) Export Automation**: 
-  - Direct generation of **JLCPCB-ready Gerber ZIPs** using `gerbonara`. All features are mapped to the `Edge.Cuts` layer.
-  - Automatic **3D Model (STL)** extrusion using `CadQuery`. Plates are extruded to 1.5mm (standard FR4/aluminum thickness).
-  - Integrated into the Web UI: Users can now download DXF, Gerber, and STL with one click.
-- **Refactored Geometry Engine (Shapely)**: Fully migrated to **Shapely** for mathematically perfect CAD generation.
-  - **Perfect Kerfing**: Applied via `Polygon.buffer()`.
-  - **Automatic Unioning**: Prevents overlapping geometry in CAD software.
+- **Fixed Gerber Export (JLCPCB-Ready)**: 
+  - Switched from a single file to a **full PCB layer stack** (Edge.Cuts, NPTH Drill, Mask, Copper).
+  - This fixes the "solid block" issue on JLCPCB's viewer. The holes and outline are now correctly identified as physical board features.
+- **STL Puzzle Split (for 3D Printing)**: 
+  - Added an optional **"Puzzle Split"** feature for STLs.
+  - Large plates are automatically split down the middle with a **trapezoidal zigzag joint**.
+  - The two halves are saved in a single STL file but moved slightly apart (5mm), allowing you to print them separately on smaller beds and lock them together securely.
 - **Form-Fitting Split Mode**: 
   - Generates tight, professional "islands" around rotated/split clusters.
   - Unions key footprints and buffers them by the specified `Plate Padding`.
-- **Robust KLE Parser**: 
-  - Spec-compliant state machine for `rx/ry` origins and `r` angles.
-  - handles ISO Enter and complex key shapes (`w2/h2`).
-  - Automatic JSON sanitization for Keyboard Layout Editor pastes.
-- **Enhanced Web UI with SVG Preview**:
-  - Instant visual verification before downloading.
-  - Default view set to "KLE Mode" + "Paste JSON".
+- **Enhanced Web UI**:
+  - Added checkboxes for **"Split Plates"** and **"Puzzle Split STL"**.
+  - Multi-format download buttons (DXF, Gerber, STL).
 
 ### Recent fixes (this session):
-1. **Export Stability**: Resolved `gerbonara` and `cadquery` integration issues, ensuring robust multi-format output.
-2. **Standard Trig Rotation**: Verified and implemented standard rotation formulas for perfect alignment on split ergo boards.
-3. **Multi-Format Downloads**: Generic download endpoint in FastAPI supports DXF, ZIP, and STL.
+1. **Gerber Recognition**: providing dummy copper and solid soldermask layers ensures manufacturing automated systems treat the FR4 plate as a real PCB.
+2. **Zigzag Solid Math**: used CadQuery's boolean intersection logic to cleanly slice the extruded solid with a custom tooth path.
+3. **Continuity Fix**: `emit_dxf` now correctly identifies and outputs separate closed loops for split/island layouts.
 
 ### 1. Web stack details
-Deployable as a single container via the root `Dockerfile`. 
-**Note**: `cadquery` is a heavy dependency and requires several megabytes of OCP libraries. It is included in the updated `requirements.txt`.
+Deployable as a single container via the root `Dockerfile`.
 
 ### 2. Next Technical Steps (Future AI)
-- **Configurable Thickness**: Add a UI slider for STL thickness (e.g. 1.2mm, 1.5mm, 4.0mm).
-- **ISO Enter Cutout**: Add the specific "L-shaped" switch cutout to `cutouts.py`.
-- **Canvas Zoom/Pan**: Improve SVG preview for large layouts.
+- **Configurable Split X**: Allow users to choose the X-coordinate for the puzzle split instead of defaulting to center.
+- **Drill Metadata**: Add tool sizes to the Excellon Drill file for even better compatibility.
+- **Advanced Puzzle Shapes**: Add options for different joint types (e.g., bone-shaped, dovetail).
 
 **Files to look at first**:
-- `scripts/exporters.py`: Gerber and STL generation logic.
-- `scripts/build_plate.py`: Core logic (Parser, Generator, API).
-- `app/main.py`: Web Backend.
-- `app/static/`: Web Frontend.
+- `scripts/exporters.py`: Gerber stack and STL split logic.
+- `scripts/build_plate.py`: Core generation and routing logic.
+- `app/static/index.html`: UI controls.
 
 **Do NOT regenerate `add_holes_freecad.py` work** — user has moved past it.
