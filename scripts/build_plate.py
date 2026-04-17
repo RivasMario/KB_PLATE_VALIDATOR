@@ -42,47 +42,33 @@ L_STAB = "STAB_CUTOUTS"
 L_SCREW = "PCB_SCREW_HOLES"
 
 
-# ---------- KLE parser ----------
-
 def parse_kle(layout):
     """
     Robust KLE parser matching official specification.
-    Handles rotations (r, rx, ry), cursor stepping (x, y), and row resets.
+    KLE rotation is clockwise. Trig is counter-clockwise.
     """
     keys = []
-    
-    # Global state
     rx, ry, r = 0.0, 0.0, 0.0
-    
-    # Cursor state
     kx, ky = 0.0, 0.0
-    
     pending = None
     
     for row in layout:
-        if isinstance(row, dict):
-            # global metadata
-            continue
-        if not isinstance(row, list):
-            continue
+        if isinstance(row, dict): continue
+        if not isinstance(row, list): continue
             
         for item in row:
             if isinstance(item, dict):
                 pending = dict(item) if pending is None else {**pending, **item}
-                
-                # rx, ry, r change the global rotation center/angle and reset kx, ky
-                if 'rx' in item or 'ry' in item or 'r' in item:
-                    if 'rx' in item: rx = item['rx']
-                    if 'ry' in item: ry = item['ry']
-                    if 'r' in item: r = item['r']
+                if 'rx' in item: rx = item['rx']
+                if 'ry' in item: ry = item['ry']
+                if 'rx' in item or 'ry' in item:
                     kx = rx
                     ky = ry
-                    
+                if 'r' in item: r = item['r']
                 if 'x' in item: kx += item['x']
                 if 'y' in item: ky += item['y']
                 continue
                 
-            # It's a string (a key)
             w = (pending or {}).get('w', 1.0)
             h = (pending or {}).get('h', 1.0)
             x2 = (pending or {}).get('x2', 0.0)
@@ -101,15 +87,12 @@ def parse_kle(layout):
                 '_rs': (pending or {}).get('_rs', 0),
                 '_k': (pending or {}).get('_k'),
             })
-            
             kx += w
             pending = None
             
-        # End of row
         ky += 1.0
         kx = rx
         
-    # Calculate transformed positions and total bounds
     min_x, max_x = float('inf'), float('-inf')
     min_y, max_y = float('inf'), float('-inf')
     
@@ -118,6 +101,8 @@ def parse_kle(layout):
         angle, rx_c, ry_c = k['_r'], k['_rx'], k['_ry']
         
         if angle != 0:
+            # KLE angle is clockwise. rotate (cx, cy) around (rx_c, ry_c) clockwise.
+            # CW rotation: x' = x cos a + y sin a, y' = -x sin a + y cos a
             rad = math.radians(angle)
             cos_a, sin_a = math.cos(rad), math.sin(rad)
             dx, dy = cx - rx_c, cy - ry_c
@@ -127,44 +112,35 @@ def parse_kle(layout):
         k['cx_u_down'] = cx
         k['cy_u_down'] = cy
         
-        # True bounding box from corners
+        # Corners for bounding box (rotated)
         w, h = k['w'], k['h']
         raw_x, raw_y = k['cx_u_raw'], k['cy_u_raw']
-        corners = [
-            (raw_x - w/2, raw_y - h/2),
-            (raw_x + w/2, raw_y - h/2),
-            (raw_x + w/2, raw_y + h/2),
-            (raw_x - w/2, raw_y + h/2)
-        ]
-        # Also check secondary box for ISO enter
+        corners = [(raw_x-w/2, raw_y-h/2), (raw_x+w/2, raw_y-h/2),
+                   (raw_x+w/2, raw_y+h/2), (raw_x-w/2, raw_y+h/2)]
         if k['w2'] != w or k['h2'] != h:
             w2, h2, x2, y2 = k['w2'], k['h2'], k['x2'], k['y2']
             raw_x2, raw_y2 = raw_x - w/2 + x2 + w2/2, raw_y - h/2 + y2 + h2/2
-            corners += [
-                (raw_x2 - w2/2, raw_y2 - h2/2),
-                (raw_x2 + w2/2, raw_y2 - h2/2),
-                (raw_x2 + w2/2, raw_y2 + h2/2),
-                (raw_x2 - w2/2, raw_y2 + h2/2)
-            ]
+            corners += [(raw_x2-w2/2, raw_y2-h2/2), (raw_x2+w2/2, raw_y2-h2/2),
+                        (raw_x2+w2/2, raw_y2+h2/2), (raw_x2-w2/2, raw_y2+h2/2)]
         
         for c_x, c_y in corners:
             if angle != 0:
                 rad = math.radians(angle)
                 cos_a, sin_a = math.cos(rad), math.sin(rad)
                 dx, dy = c_x - rx_c, c_y - ry_c
-                c_x = rx_c + (dx * cos_a - dy * sin_a)
-                c_y = ry_c + (dx * sin_a + dy * cos_a)
-                
-            min_x, max_x = min(min_x, c_x), max(max_x, c_x)
-            min_y, max_y = min(min_y, c_y), max(max_y, c_y)
+                rx_p = rx_c + (dx * cos_a - dy * sin_a)
+                ry_p = ry_c + (dx * sin_a + dy * cos_a)
+            else:
+                rx_p, ry_p = c_x, c_y
+            min_x, max_x = min(min_x, rx_p), max(max_x, rx_p)
+            min_y, max_y = min(min_y, ry_p), max(max_y, ry_p)
             
     plate_w = max_x - min_x
     plate_h = max_y - min_y
-    
     for k in keys:
         k['cx_u'] = k['cx_u_down'] - min_x
         k['cy_u'] = max_y - k['cy_u_down']
-        k['_r'] = -k['_r'] # Sign flip for DXF (Y-up) vs KLE (Y-down)
+        k['_r'] = -k['_r'] # flip CW to CCW for affinity.rotate
         
     return keys, plate_w, plate_h
 
