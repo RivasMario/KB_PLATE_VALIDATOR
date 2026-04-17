@@ -175,7 +175,7 @@ except Exception as e:
 print(f"Adding {{len({screw_holes})}} screw holes...")
 screw_coords = {screw_holes}
 for i, (x, y) in enumerate(screw_coords):
-    circle = Draft.makeCircle(radius=1.1, placement=FreeCAD.Placement(FreeCAD.Vector(x, y, 0), FreeCAD.Rotation()))
+    circle = Draft.makeCircle(radius=1.5, placement=FreeCAD.Placement(FreeCAD.Vector(x, y, 0), FreeCAD.Rotation()))
     circle.Label = f"Screw_{{i+1}}"
     try:
         circle.ViewObject.LineColor = (1.0, 0.0, 0.0, 1.0)  # RED
@@ -185,7 +185,7 @@ for i, (x, y) in enumerate(screw_coords):
 print(f"Adding {{len({edge_cutouts})}} edge cutouts...")
 edge_coords = {edge_cutouts}
 for i, (x, y) in enumerate(edge_coords):
-    circle = Draft.makeCircle(radius=0.5, placement=FreeCAD.Placement(FreeCAD.Vector(x, y, 0), FreeCAD.Rotation()))
+    circle = Draft.makeCircle(radius=1.0, placement=FreeCAD.Placement(FreeCAD.Vector(x, y, 0), FreeCAD.Rotation()))
     circle.Label = f"EdgeCutout_{{i+1}}"
     try:
         circle.ViewObject.LineColor = (0.0, 0.0, 1.0, 1.0)  # BLUE
