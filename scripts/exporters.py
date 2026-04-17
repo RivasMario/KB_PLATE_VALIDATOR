@@ -2,7 +2,7 @@
 exporters.py
 
 Utilities to export keyboard plates from Shapely geometry to manufacturing formats:
-1. Gerber (ZIP for JLCPCB) - Full PCB stack to fix "solid block" issue.
+1. Gerber (ZIP for JLCPCB) - Improved to ensure holes are recognized.
 2. 3D Model (STL for 3D printing) - Support for Puzzle Split (Zigzag).
 """
 
@@ -27,12 +27,12 @@ try:
 except ImportError:
     cq = None
 
-from shapely.geometry import Polygon, MultiPolygon, Point
+from shapely.geometry import Polygon, MultiPolygon, Point, box
 
 def export_gerber(outline_poly, cutout_polys, screws, screw_radius, output_zip):
     """
     Export plate geometry to a Gerber ZIP file compatible with JLCPCB.
-    Creates a full PCB stack (Empty Copper, Solid Mask) to ensure correct preview.
+    Ensures that switch holes and stabilizers are correctly identified as cutouts.
     """
     if GerberFile is None:
         raise ImportError("gerbonara not fully functional or installed")
@@ -41,30 +41,41 @@ def export_gerber(outline_poly, cutout_polys, screws, screw_radius, output_zip):
     if temp_dir.exists(): shutil.rmtree(temp_dir)
     temp_dir.mkdir(parents=True)
 
-    # 1. Edge.Cuts (The physical board and holes)
+    # 1. Edge.Cuts (Outline and all cutouts)
+    # Standard practice for FR4 plates is to put everything on Edge.Cuts.
     edge_cuts = GerberFile()
     edge_cuts.unit = MM
     line_ap = CircleAperture(diameter=0.15, unit=MM)
     
-    def add_poly_to_file(poly, file_obj, ap=None):
-        coords = list(poly.exterior.coords)
+    def add_poly_to_edge_cuts(poly, file_obj):
+        # We add the polygons as Regions (G36/G37) so CAM tools 
+        # definitely see them as "enclosed shapes to be cut".
+        # Exterior
+        file_obj.objects.append(Region(list(poly.exterior.coords), unit=MM))
+        # Interiors
+        for interior in poly.interiors:
+            file_obj.objects.append(Region(list(interior.coords), unit=MM))
+
+    # Add main board outline
+    polys = outline_poly.geoms if isinstance(outline_poly, MultiPolygon) else [outline_poly]
+    for p in polys:
+        # For the outline, we usually want a loop of lines, not a filled region.
+        coords = list(p.exterior.coords)
         for i in range(len(coords) - 1):
             p1, p2 = coords[i], coords[i+1]
-            if ap: file_obj.objects.append(Line(p1[0], p1[1], p2[0], p2[1], aperture=ap, unit=MM))
-            else: file_obj.objects.append(Line(p1[0], p1[1], p2[0], p2[1], unit=MM))
-        for interior in poly.interiors:
-            coords = list(interior.coords)
-            for i in range(len(coords) - 1):
-                p1, p2 = coords[i], coords[i+1]
-                if ap: file_obj.objects.append(Line(p1[0], p1[1], p2[0], p2[1], aperture=ap, unit=MM))
-                else: file_obj.objects.append(Line(p1[0], p1[1], p2[0], p2[1], unit=MM))
+            edge_cuts.objects.append(Line(p1[0], p1[1], p2[0], p2[1], aperture=line_ap, unit=MM))
+        # Also draw any internal holes in the outline island
+        for interior in p.interiors:
+            icoords = list(interior.coords)
+            for i in range(len(icoords) - 1):
+                edge_cuts.objects.append(Line(icoords[i][0], icoords[i][1], icoords[i+1][0], icoords[i+1][1], aperture=line_ap, unit=MM))
 
-    # Add all geometry to Edge_Cuts
-    polys = outline_poly.geoms if isinstance(outline_poly, MultiPolygon) else [outline_poly]
-    for p in polys: add_poly_to_file(p, edge_cuts, line_ap)
+    # Add all switch/stab cutouts as Regions
     for p in cutout_polys:
         sub_polys = p.geoms if isinstance(p, MultiPolygon) else [p]
-        for sp in sub_polys: add_poly_to_file(sp, edge_cuts, line_ap)
+        for sp in sub_polys:
+            # Drawing a Region on Edge.Cuts tells the manufacturer "cut this area out"
+            add_poly_to_edge_cuts(sp, edge_cuts)
 
     # 2. NPTH_Drill.drl (Circular mounting holes)
     drill = ExcellonFile()
@@ -72,25 +83,33 @@ def export_gerber(outline_poly, cutout_polys, screws, screw_radius, output_zip):
     for sx, sy in (screws or []):
         drill.add_drill(sx, sy, diameter=screw_radius * 2)
 
-    # 3. Soldermask (Top and Bottom - make them solid for plate color)
-    # We use a Region covering the bounding box
-    minx, miny, maxx, maxy = outline_poly.bounds
-    mask_poly = Polygon([(minx, miny), (maxx, miny), (maxx, maxy), (minx, maxy)])
+    # 3. Dummy mask and copper to satisfy the "Complete PCB" auto-detector
+    # But this time, we subtract the holes from the mask so they show up as "through" in the preview.
+    top_mask = GerberFile(); top_mask.unit = MM
+    top_copper = GerberFile(); top_copper.unit = MM
     
-    top_mask = GerberFile()
-    top_mask.unit = MM
-    # Add a solid region for the board color
-    r = Region([(minx, miny), (maxx, miny), (maxx, maxy), (minx, maxy)], unit=MM)
-    top_mask.objects.append(r)
+    # Add a slightly smaller board shape to copper if you want a "ring", 
+    # but for a plain plate we just leave it empty or add a tiny dot 
+    # so the file is valid.
+    top_copper.objects.append(Line(0, 0, 0.01, 0.01, aperture=line_ap, unit=MM))
+
+    # For SolderMask, we want it to cover the board but NOT the holes.
+    # Actually, Gerber Mask layers are usually "POSITIVE": you draw where you WANT NO MASK.
+    # So we should put all our holes in the mask layer too.
+    for p in cutout_polys:
+        sub_polys = p.geoms if isinstance(p, MultiPolygon) else [p]
+        for sp in sub_polys:
+            add_poly_to_edge_cuts(sp, top_mask)
     
-    # Save files with JLCPCB-friendly names
+    for sx, sy in (screws or []):
+        ap = CircleAperture(diameter=screw_radius * 2, unit=MM)
+        top_mask.objects.append(Flash(sx, sy, aperture=ap, unit=MM))
+
+    # Save
     edge_cuts.save(temp_dir / "Edge_Cuts.gbr")
     drill.save(temp_dir / "Drills.drl")
     top_mask.save(temp_dir / "Top_SolderMask.gbr")
-    top_mask.save(temp_dir / "Bottom_SolderMask.gbr") # Same as top
-    
-    # Empty copper layers
-    top_copper = GerberFile(); top_copper.unit = MM
+    top_mask.save(temp_dir / "Bottom_SolderMask.gbr")
     top_copper.save(temp_dir / "Top_Copper.gbr")
     top_copper.save(temp_dir / "Bottom_Copper.gbr")
 
@@ -182,25 +201,13 @@ def export_stl(outline_poly, cutout_polys, screws, screw_radius, output_stl, thi
         pts = [(mid_x, miny - 5.0)]
         for i in range(num_teeth):
             y = miny + i * step
-            # Trapezoid shape
             pts.append((mid_x, y + step*0.2))
             pts.append((mid_x + tooth_h, y + step*0.4))
             pts.append((mid_x + tooth_h, y + step*0.6))
             pts.append((mid_x, y + step*0.8))
         pts.append((mid_x, maxy + 5.0))
         
-        # We create a giant surface to cut with
-        # Actually in CadQuery, splitting with a non-planar surface is best done by:
-        # Creating a wire, extruding it to a surface, then split.
         cutter_wire = cq.Workplane("XY").polyline(pts)
-        # We need to make this into a "wall" that passes through the plate
-        cutter = cutter_wire.extrude(thickness * 2, combine=False).translate((0,0,-thickness))
-        
-        # Split!
-        # CadQuery split logic:
-        # Actually, let's just make two solids by intersecting with two giant boxes.
-        left_box = cq.Workplane("XY").moveTo(mid_x - 1000, (miny+maxy)/2).box(2000, (maxy-miny)+100, thickness*2)
-        # Subtract the "right" half of the zigzag
         pts_left = pts + [(mid_x - 1000, maxy+5), (mid_x - 1000, miny-5)]
         pts_right = pts + [(mid_x + 1000, maxy+5), (mid_x + 1000, miny-5)]
         
@@ -210,10 +217,6 @@ def export_stl(outline_poly, cutout_polys, screws, screw_radius, output_stl, thi
         result_left = result.intersect(cutter_left)
         result_right = result.intersect(cutter_right)
         
-        # We'll save them slightly apart or as two separate meshes if needed.
-        # For now, let's just union them with a tiny gap or just return the unioned result? 
-        # User said "split in two with zig zags". 
-        # I'll save them as two separate objects in the same file but moved apart 5mm.
         final_model = result_left.union(result_right.translate((5, 0, 0)))
         cq.exporters.export(final_model, str(output_stl))
     else:

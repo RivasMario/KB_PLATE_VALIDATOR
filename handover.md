@@ -9,8 +9,9 @@
   - The script now automatically scans the center of your board to find a **"Safe Zone"** (a vertical gap between key columns).
   - It prioritizes splitting through empty space, ensuring that **no switch holes are cut in half**, which drastically improves the mechanical strength of 3D printed plates.
 - **Fixed Gerber Export (JLCPCB-Ready)**: 
-  - Switched to a **full PCB layer stack** (Edge.Cuts, NPTH Drill, Mask, Copper).
-  - This ensures that JLCPCB's online viewer correctly renders the plate with all holes and slots, fixing the "solid block" issue.
+  - **Robust Region Slicing**: Switched from line-based cutouts to **Gerber Regions (G36/G37)** for all switch and stabilizer holes. This is the industry-standard way to ensure automated CAM systems see the holes as internal cutouts.
+  - **Full PCB stack**: Included dummy copper and soldermask layers (with holes subtracted) to force JLCPCB's viewer to render the "Through" features correctly.
+
 - **Form-Fitting Split Mode**: 
   - Generates tight, professional "islands" around rotated/split clusters for Ergo/Alice boards.
 - **Enhanced Web UI**:
