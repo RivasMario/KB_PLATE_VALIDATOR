@@ -45,7 +45,7 @@ L_SCREW = "PCB_SCREW_HOLES"
 def parse_kle(layout):
     """
     Robust KLE parser matching official specification.
-    KLE rotation is clockwise.
+    KLE uses a Y-down coordinate system and clockwise angles.
     """
     keys = []
     rx, ry, r = 0.0, 0.0, 0.0
@@ -59,6 +59,7 @@ def parse_kle(layout):
         for item in row:
             if isinstance(item, dict):
                 pending = dict(item) if pending is None else {**pending, **item}
+                # rx/ry reset the cursor to the new origin. r does NOT reset the cursor.
                 if 'rx' in item: rx = item['rx']
                 if 'ry' in item: ry = item['ry']
                 if 'rx' in item or 'ry' in item:
@@ -103,7 +104,9 @@ def parse_kle(layout):
             rad = math.radians(ang)
             cos_a, sin_a = math.cos(rad), math.sin(rad)
             dx, dy = px - cx, py - cy
-            # Clockwise rotation
+            # Standard rotation formula:
+            # In Y-up system: rotates CCW.
+            # In Y-down system (KLE): rotates CW.
             return cx + (dx * cos_a - dy * sin_a), cy + (dx * sin_a + dy * cos_a)
             
         k['cx_u_down'], k['cy_u_down'] = rotate_point(k['cx_u_raw'], k['cy_u_raw'], angle, rx_c, ry_c)
@@ -128,7 +131,7 @@ def parse_kle(layout):
     for k in keys:
         k['cx_u'] = k['cx_u_down'] - min_x
         k['cy_u'] = max_y - k['cy_u_down']
-        k['_r'] = -k['_r'] # flip CW to CCW for affinity.rotate
+        k['_r'] = -k['_r'] # Flip CW to CCW for Shapely/Affinity (which is Y-up)
         
     return keys, plate_w, plate_h
 
