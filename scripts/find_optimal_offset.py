@@ -1,12 +1,18 @@
-#!/usr/bin/env python3
-"""
-Find optimal (dx, dy) offset to align PCB screw holes with plate holes.
-"""
-
-import re
+import sys
 import math
 from pathlib import Path
 import ezdxf
+import re
+
+# Add current directory to path so config can be imported
+sys.path.append(str(Path(__file__).parent))
+try:
+    import config
+except ImportError:
+    class ConfigMock:
+        KICAD_PCB = Path("/home/mario/Documents/GitHub/SKYWAY-96/KiCAD Source Files/rivasmario 96% Hotswap Rp2040.kicad_pcb")
+        INPUT_DXF = Path("/home/mario/Downloads/generated_plate.dxf")
+    config = ConfigMock()
 
 def find_kicad_screw_holes(kicad_path):
     with open(kicad_path, 'r') as f:
@@ -16,13 +22,12 @@ def find_kicad_screw_holes(kicad_path):
     for match in re.finditer(pattern, content, re.DOTALL):
         x, y = float(match.group(1)), float(match.group(2))
         holes.append((x, y))
-    return holes
+    return sorted(holes, key=lambda h: (h[1], h[0]))
 
 def find_rectangles_from_lines(dxf_path):
     doc = ezdxf.readfile(str(dxf_path))
     msp = doc.modelspace()
-    h_lines = {}
-    v_lines = {}
+    h_lines, v_lines = {}, {}
     entities = list(msp.query('LINE LWPOLYLINE'))
     segments = []
     for entity in entities:
@@ -46,7 +51,6 @@ def find_rectangles_from_lines(dxf_path):
             if x not in v_lines: v_lines[x] = []
             v_lines[x].append((min(y1, y2), max(y1, y2)))
     rectangles = []
-    tolerance = 0.5
     for y1 in sorted(h_lines.keys()):
         for y2 in sorted(h_lines.keys()):
             if y1 >= y2: continue
@@ -58,12 +62,10 @@ def find_rectangles_from_lines(dxf_path):
                     x_right = min(x1b, x2b)
                     width = x_right - x_left
                     if width < 2 or width > 50: continue
-                    v_left = any(abs(v - x_left) < tolerance for v in v_lines.keys())
-                    v_right = any(abs(v - x_right) < tolerance for v in v_lines.keys())
+                    v_left = any(abs(v - x_left) < 0.5 for v in v_lines.keys())
+                    v_right = any(abs(v - x_right) < 0.5 for v in v_lines.keys())
                     if v_left and v_right:
-                        cx = (x_left + x_right) / 2
-                        cy = (y1 + y2) / 2
-                        rectangles.append((cx, cy, width, height))
+                        rectangles.append(((x_left + x_right) / 2, (y1 + y2) / 2, width, height))
     clusters = []
     for r in rectangles:
         found_cluster = None
@@ -75,62 +77,76 @@ def find_rectangles_from_lines(dxf_path):
         else: found_cluster.append(r)
     unique = []
     for cluster in clusters:
-        largest = max(cluster, key=lambda r: r[2] * r[3])
-        unique.append(largest)
+        unique.append(max(cluster, key=lambda r: r[2] * r[3]))
     return unique
 
 def distance(p1, p2):
     return math.sqrt((p1[0] - p2[0])**2 + (p1[1] - p2[1])**2)
 
-def main():
-    kicad = Path(r"C:\Users\v-mariorivas\OneDrive - Microsoft\Desktop\96_ Hotswap Keyboard PCB\KiCAD Source Files\rivasmario 96% Hotswap Rp2040.kicad_pcb")
-    plate_dxf = Path(r"C:\Users\v-mariorivas\Downloads\new96.dxf")
+def get_plate_bounds(rects):
+    if not rects: return 0, 0, 0, 0
+    xs = [cx - w/2 for cx, cy, w, h in rects] + [cx + w/2 for cx, cy, w, h in rects]
+    ys = [cy - h/2 for cx, cy, w, h in rects] + [cy + h/2 for cx, cy, w, h in rects]
+    return min(xs), max(xs), min(ys), max(ys)
 
-    screw_holes = find_kicad_screw_holes(kicad)
-    plate_holes = find_rectangles_from_lines(plate_dxf)
+def test_config(dx, dy, raw_screws, plate_holes, bounds, mirror, pcb_cy):
+    min_x, max_x, min_y, max_y = bounds
+    overlaps = 0
+    current_min_dist = 999
+    out_of_bounds = 0
     
-    xs = [p[0] - p[2]/2 for p in plate_holes] + [p[0] + p[2]/2 for p in plate_holes]
-    ys = [p[1] - p[3]/2 for p in plate_holes] + [p[1] + p[3]/2 for p in plate_holes]
-    min_x, max_x, min_y, max_y = min(xs), max(xs), min(ys), max(ys)
-    
-    print(f"Plate bounds: X({min_x:.1f}, {max_x:.1f}), Y({min_y:.1f}, {max_y:.1f})")
-    
-    best_offset = (0, 0)
-    min_overlaps = 999
-    min_out_of_bounds = 999
-    
-    # Brute force search for best offset
-    # Range of dx: -100 to 100, dy: -200 to 200 (based on initial findings)
-    overlap_threshold = 8.55
-    
-    print("Searching for optimal offset...")
-    
-    for dy in range(-150, 50, 2):
-        for dx in range(-100, 50, 2):
-            out_of_bounds = 0
-            overlaps = 0
+    for sx, sy in raw_screws:
+        ty_base = pcb_cy - (sy - pcb_cy) if mirror else sy
+        tx, ty = sx + dx, ty_base + dy
+        
+        # Check bounds
+        if not (min_x <= tx <= max_x and min_y <= ty <= max_y):
+            out_of_bounds += 1
             
-            for sx, sy in screw_holes:
-                nx, ny = sx + dx, sy + dy
-                if not (min_x <= nx <= max_x and min_y <= ny <= max_y):
-                    out_of_bounds += 1
+        # Check overlaps
+        for ph in plate_holes:
+            d = distance((tx, ty), (ph[0], ph[1]))
+            if d < current_min_dist:
+                current_min_dist = d
+            if d < 8.55:
+                overlaps += 1
                 
-                for px, py, pw, ph in plate_holes:
-                    if distance((nx, ny), (px, py)) < overlap_threshold:
-                        overlaps += 1
-            
-            if out_of_bounds < min_out_of_bounds or (out_of_bounds == min_out_of_bounds and overlaps < min_overlaps):
-                min_out_of_bounds = out_of_bounds
-                min_overlaps = overlaps
-                best_offset = (dx, dy)
-                if min_out_of_bounds == 0 and min_overlaps == 0:
-                    break
-        if min_out_of_bounds == 0 and min_overlaps == 0:
-            break
+    return overlaps, out_of_bounds, current_min_dist
 
-    print(f"Best Offset Found: dx={best_offset[0]}, dy={best_offset[1]}")
-    print(f"Out of bounds: {min_out_of_bounds}")
-    print(f"Overlaps: {min_overlaps}")
+def main():
+    kicad = config.KICAD_PCB
+    input_dxf = config.INPUT_DXF
+    
+    raw_screws = find_kicad_screw_holes(kicad)
+    plate_holes = find_rectangles_from_lines(input_dxf)
+    bounds = get_plate_bounds(plate_holes)
+    
+    print(f"Plate Bounds: X({bounds[0]:.1f}-{bounds[1]:.1f}) Y({bounds[2]:.1f}-{bounds[3]:.1f})")
+    
+    for pcb_cy in [127.1, 137.1, 147.1, 117.1]:
+        print(f"\n--- TESTING pcb_cy = {pcb_cy} ---")
+        for mirror in [True, False]:
+            print(f"Testing {'Mirror-Y' if mirror else 'Normal-Y'}...")
+            best_cfg = None
+            min_score = 999
+            
+            for dx_int in range(-500, 500, 4): # 4mm steps
+                dx = float(dx_int)
+                for dy_int in range(-500, 500, 4):
+                    dy = float(dy_int)
+                    
+                    overlaps, oob, min_dist = test_config(dx, dy, raw_screws, plate_holes, bounds, mirror, pcb_cy)
+                    
+                    if oob == 0 and overlaps == 0:
+                        print(f"SUCCESS! pcb_cy={pcb_cy}, mirror={mirror}, dx={dx}, dy={dy}, min_dist={min_dist:.2f}mm")
+                        return dx, dy, mirror, pcb_cy
+                    
+                    score = oob * 10 + overlaps
+                    if not best_cfg or score < min_score:
+                        min_score = score
+                        best_cfg = (dx, dy, overlaps, oob, min_dist)
+            
+            print(f"Best: dx={best_cfg[0]}, dy={best_cfg[1]}, overlaps={best_cfg[2]}, oob={best_cfg[3]}, min_dist={best_cfg[4]:.2f}mm")
 
 if __name__ == "__main__":
     main()

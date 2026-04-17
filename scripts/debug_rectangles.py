@@ -3,8 +3,20 @@
 Debug: Show all rectangles found in DXF
 """
 
+import sys
 from pathlib import Path
 import ezdxf
+
+# Add current directory to path so config can be imported
+sys.path.append(str(Path(__file__).parent))
+HOME = Path.home()
+try:
+    import config
+except ImportError:
+    # Fallback if config is missing or not in path
+    class ConfigMock:
+        INPUT_DXF = Path("/home/mario/Downloads/unfucked.dxf")
+    config = ConfigMock()
 
 def find_all_rectangles(dxf_path):
     doc = ezdxf.readfile(str(dxf_path))
@@ -71,7 +83,7 @@ def find_all_rectangles(dxf_path):
     return sorted(unique, key=lambda r: (r[1], r[0]))
 
 def main():
-    plate_dxf = Path(r"C:\Users\v-mariorivas\Downloads\96plate.dxf")
+    plate_dxf = config.INPUT_DXF
 
     print("\n" + "="*80)
     print("DEBUG: RECTANGLE DETECTION")

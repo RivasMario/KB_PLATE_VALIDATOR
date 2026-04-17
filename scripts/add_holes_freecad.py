@@ -4,12 +4,27 @@ Add PCB holes to plate DXF using FreeCAD CLI-Anything harness
 Includes overlap validation against plate holes.
 """
 
+import sys
 import re
 import json
 import subprocess
 import math
 from pathlib import Path
 import ezdxf
+
+# Add current directory to path so config can be imported
+sys.path.append(str(Path(__file__).parent))
+try:
+    import config
+except ImportError:
+    # Fallback if config is missing or not in path
+    class ConfigMock:
+        KICAD_PCB = Path("/home/mario/Documents/GitHub/SKYWAY-96/KiCAD Source Files/rivasmario 96% Hotswap Rp2040.kicad_pcb")
+        INPUT_DXF = Path("/home/mario/Downloads/unfucked.dxf")
+        OUTPUT_DXF = Path("/home/mario/Downloads/96plate_CLEAN_WITH_PCB.dxf")
+        MACRO_FILE = Path("/home/mario/Downloads/add_holes_macro.py")
+        FREECAD_EXE = Path("/usr/bin/freecadcmd")
+    config = ConfigMock()
 
 def find_kicad_screw_holes(kicad_path):
     with open(kicad_path, 'r') as f:
@@ -215,15 +230,38 @@ print("Macro execution finished.")
 """
     return macro
 
+def get_clearance(px, py, plate_holes):
+    \"\"\"Calculate minimum distance from point (px, py) to any edge of any plate hole.\"\"\"
+    min_dist = 999.0
+    screw_radius = 1.1
+    
+    for cx, cy, w, h in plate_holes:
+        # Distance to rectangle logic:
+        # Calculate distance from point to the box defined by (cx, cy, w, h)
+        dx = max(abs(px - cx) - w/2, 0)
+        dy = max(abs(py - cy) - h/2, 0)
+        dist_to_box = math.sqrt(dx**2 + dy**2)
+        
+        # If point is INSIDE the box, distance to box is 0. 
+        # We need to calculate how far it is from the closest edge (as a negative value)
+        if dx == 0 and dy == 0:
+            dist_to_edge = -min(w/2 - abs(px - cx), h/2 - abs(py - cy))
+            dist_to_box = dist_to_edge
+            
+        if dist_to_box < min_dist:
+            min_dist = dist_to_box
+            
+    return min_dist - screw_radius # Distance from screw edge to hole edge
+
 def main():
-    kicad = Path(r"C:\Users\v-mariorivas\OneDrive - Microsoft\Desktop\96_ Hotswap Keyboard PCB\KiCAD Source Files\rivasmario 96% Hotswap Rp2040.kicad_pcb")
-    input_dxf = Path(r"C:\Users\v-mariorivas\Downloads\unfucked.dxf")
-    output_dxf = Path(r"C:\Users\v-mariorivas\Downloads\96plate_CLEAN_WITH_PCB.dxf")
-    macro_file = Path(r"C:\Users\v-mariorivas\Downloads\add_holes_macro.py")
-    freecad_exe = Path(r"C:\Users\v-mariorivas\AppData\Local\Programs\FreeCAD 1.1\bin\freecadcmd.exe")
+    kicad = config.KICAD_PCB
+    input_dxf = config.INPUT_DXF
+    output_dxf = config.OUTPUT_DXF
+    macro_file = config.MACRO_FILE
+    freecad_cmd = config.FREECAD_CMD
 
     print("\n" + "="*80)
-    print("ADD PCB ELEMENTS TO PLATE USING FREECAD (WITH VALIDATION)")
+    print("ADD PCB ELEMENTS TO PLATE USING FREECAD (WITH SMART NUDGE)")
     print("="*80 + "\n")
 
     # 1. Extract PCB coordinates
@@ -245,51 +283,69 @@ def main():
     print(f"  Detected {len(all_plate_holes)} plate holes (Switches: {len(switches)}, Combos: {len(combos)}, Stabs: {len(stabs)})")
 
     # 3. Overlap Validation with Mirror-Y
-    print("\nValidating overlaps with MIRROR-Y transformation...")
+    print("\nApplying MIRROR-Y transformation and Smart Nudge...")
     
-    # Calculate PCB screw center for mirroring based on all PCB elements
-    pcb_ys = [s[1] for s in screw_holes]
-    pcb_cy = 127.1 # Based on min(79.5) and max(174.7) from switch bounds
+    pcb_cy = 127.1
+    dx_off, dy_off = -52, -62 # Starting offset
     
-    # Optimal offset found: dx=-52, dy=-71 (relative to Mirror-Y)
-    dx, dy = -52, -71
+    min_safe_clearance = 1.0 # mm between screw edge and hole edge
+    final_screws = []
+    nudged_count = 0
     
-    transformed_screws = []
-    for sx, sy in screw_holes:
-        my = pcb_cy - (sy - pcb_cy) # Mirror Y
-        transformed_screws.append((sx + dx, my + dy))
+    for i, (sx, sy) in enumerate(screw_holes):
+        # Initial transform
+        my = pcb_cy - (sy - pcb_cy)
+        tx, ty = sx + dx_off, my + dy_off
         
+        clearance = get_clearance(tx, ty, all_plate_holes)
+        
+        if clearance < min_safe_clearance:
+            print(f"  Nudging Screw_{i+1} at ({tx:.1f}, {ty:.1f}) - current clearance {clearance:.2f}mm")
+            best_pos = (tx, ty)
+            best_clearance = clearance
+            found_nudge = False
+            
+            # Try nudging in 0.25mm increments up to 12mm
+            for dist_int in range(1, 49): # 0.25mm to 12.0mm
+                dist = dist_int * 0.25
+                for angle in range(0, 360, 11): # 32 directions
+                    rad = math.radians(angle)
+                    nx = tx + dist * math.cos(rad)
+                    ny = ty + dist * math.sin(rad)
+                    
+                    n_clearance = get_clearance(nx, ny, all_plate_holes)
+                    if n_clearance > best_clearance:
+                        best_clearance = n_clearance
+                        best_pos = (nx, ny)
+                        
+                    if n_clearance >= min_safe_clearance:
+                        print(f"    -> SUCCESS: Shifted {dist:.2f}mm to ({nx:.1f}, {ny:.1f}) | New clearance: {n_clearance:.2f}mm")
+                        tx, ty = nx, ny
+                        found_nudge = True
+                        nudged_count += 1
+                        break
+                if found_nudge: break
+                
+            if not found_nudge:
+                print(f"    WARNING: Could not find perfect clearance for Screw_{i+1}. Using best position clearance {best_clearance:.2f}mm")
+                tx, ty = best_pos
+        
+        final_screws.append((tx, ty))
+
+    # 4. Create & Run FreeCAD macro with final coordinates
     transformed_edges = []
     for ex, ey in edge_cutouts:
-        my = pcb_cy - (ey - pcb_cy) # Mirror Y
-        transformed_edges.append((ex + dx, my + dy))
+        my = pcb_cy - (ey - pcb_cy)
+        transformed_edges.append((ex + dx_off, my + dy_off))
 
-    overlap_threshold = 8.55
-    overlaps = []
-    for sx, sy in transformed_screws:
-        for ph in all_plate_holes:
-            cx, cy, w, h = ph
-            d = distance((sx, sy), (cx, cy))
-            if d < overlap_threshold:
-                overlaps.append((d, (sx, sy), (cx, cy)))
-
-    if overlaps:
-        print(f"  WARNING: Found {len(overlaps)} potential overlaps!")
-        overlaps.sort()
-        for d, (sx, sy), (cx, cy) in overlaps[:5]:
-            print(f"    - Distance {d:.2f}mm: Screw at ({sx:.1f}, {sy:.1f}) vs Plate hole at ({cx:.1f}, {cy:.1f})")
-    else:
-        print("  SUCCESS: No overlaps detected with transformation.")
-
-    # 4. Create & Run FreeCAD macro with transformed coordinates
-    macro = create_freecad_macro(transformed_screws, transformed_edges, input_dxf, output_dxf)
+    macro = create_freecad_macro(final_screws, transformed_edges, input_dxf, output_dxf)
     with open(macro_file, 'w') as f:
         f.write(macro)
 
     print(f"\nRunning FreeCAD macro...")
     try:
         result = subprocess.run(
-            [str(freecad_exe), str(macro_file)],
+            freecad_cmd + [str(macro_file)],
             capture_output=True,
             text=True,
             timeout=60

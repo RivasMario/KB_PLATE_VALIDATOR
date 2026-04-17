@@ -3,10 +3,23 @@
 Validate new 96plate.dxf file
 """
 
+import sys
 import re
 import math
 from pathlib import Path
 import ezdxf
+
+# Add current directory to path so config can be imported
+sys.path.append(str(Path(__file__).parent))
+HOME = Path.home()
+try:
+    import config
+except ImportError:
+    # Fallback if config is missing or not in path
+    class ConfigMock:
+        KICAD_PCB = Path("/home/mario/Documents/GitHub/SKYWAY-96/KiCAD Source Files/rivasmario 96% Hotswap Rp2040.kicad_pcb")
+        INPUT_DXF = Path("/home/mario/Downloads/unfucked.dxf")
+    config = ConfigMock()
 
 def find_rectangles_from_lines(dxf_path):
     doc = ezdxf.readfile(str(dxf_path))
@@ -221,11 +234,12 @@ def main():
     if len(sys.argv) > 1:
         plate_dxf = Path(sys.argv[1])
     else:
-        plate_dxf = Path(r"C:\Users\v-mariorivas\Downloads\96plate_FINAL_WITH_PCB.dxf")
+        plate_dxf = config.INPUT_DXF
+        # Fallback to alternative plate if default doesn't exist
         if not plate_dxf.exists():
-             plate_dxf = Path(r"C:\Users\v-mariorivas\Downloads\cc1e0e052d37d91e9d1f8f9d7166eea779a44e9f_switch.dxf")
+             plate_dxf = Path(HOME / "Downloads" / "cc1e0e052d37d91e9d1f8f9d7166eea779a44e9f_switch.dxf")
 
-    kicad = Path(r"C:\Users\v-mariorivas\OneDrive - Microsoft\Desktop\96_ Hotswap Keyboard PCB\KiCAD Source Files\rivasmario 96% Hotswap Rp2040.kicad_pcb")
+    kicad = config.KICAD_PCB
 
     print("\n" + "="*80)
     print(f"VALIDATING: {plate_dxf.name}")

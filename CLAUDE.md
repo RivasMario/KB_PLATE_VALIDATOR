@@ -39,7 +39,7 @@ Goal: Count 101 total switch positions (96 regular + 5 stabilized keys with comb
 
 ### Size-Based Classification
 
-Switch/stabilizer identification uses rectangle dimensions:
+Switch/stabilizer identification uses rectangle dimensions (mm):
 
 ```
 Pure Switches:      12.5 < min(w,h) < 14.2  AND  12.5 < max(w,h) < 14.2
@@ -47,12 +47,24 @@ Combo Switches:     12.5 < min(w,h) < 14.2  AND  31 < max(w,h) < 43
 Stabilizers:        8 < min(w,h) < 10       AND  18 < max(w,h) < 26
 ```
 
-**Thresholds derived from**:
-- Standard MX switch: 13.9×13.9mm (MX spec)
-- PCB KLE definition: 96 regular + 5 stabilized = 101 total
-- Stabilizer cutout sizes vary by type (Cherry vs Costar style)
+**Thresholds and Dimensions (Source: kb_builder)**:
+- **Standard MX Cutout**: 14.0 x 14.0 mm (internal logic uses `14 - 2*kerf`)
+- **Alps Cutout**: 15.5 x 12.8 mm
+- **Stabilizer Spacing (U)**:
+  - 2u: 23.85 mm (between center of stab holes)
+  - 6.25u: 100.0 mm
+  - 7u: 114.3 mm
+- **Key Pitch (U)**: 19.05 mm (standard)
 
 **Swillkb specific**: 5 combo holes for space bar, enter, backspace, numpad enter, numpad plus. These are single large rectangles combining both switch and stabilizer mounting, counted as one switch position.
+
+### CAD Engine Insights (swillkb/kb_builder)
+
+The `kb_builder` engine uses **CadQuery** atop FreeCAD to generate geometry procedurally:
+1. **Polyline-based Cutouts**: Switches and stabilizers are defined as sets of points (polylines) that are "cut" through a base plate box.
+2. **Standardization**: It defines `self.u1 = 19.05` as the base unit for all calculations.
+3. **Rotation Logic**: It supports independent rotation for switches (`_r`) and stabilizers (`_rs`) using coordinate transformation matrices.
+4. **Kerf Compensation**: It subtracts `kerf/2` from all external dimensions and adds it to internal dimensions to account for laser beam width.
 
 ### PCB Element Extraction
 
