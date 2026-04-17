@@ -407,7 +407,11 @@ def generate_plate(kle_path=None, out_path=None, pcb_path=None,
     else: raise ValueError("No KLE input provided")
         
     sanitized = re.sub(r'([{,]\s*)([a-zA-Z_]\w*)\s*:', r'\1"\2":', raw_text)
-    keys, plate_w, plate_h = parse_kle(json.loads(sanitized))
+    keys, key_w, key_h = parse_kle(json.loads(sanitized))
+    
+    plate_w = key_w + 2 * pad
+    plate_h = key_h + 2 * pad
+    
     cutouts = build_entities(keys, pad=pad, kerf=kerf, switch_type=switch_type, stab_type=stab_type)
     screw_radius = screw_diameter / 2.0
     screws = None
