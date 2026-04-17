@@ -195,7 +195,7 @@ Issues flagged if actual distance < safe distance. Swillkb analysis found 5 marg
 ## Future Enhancements
 
 - [x] Add PCB elements to plate via FreeCAD (DONE)
-- [ ] Automate DXF export from FreeCAD macro (eliminate manual step)
+- [x] Automate DXF export from FreeCAD macro (DONE)
 - [ ] Support LWPOLYLINE DXF entities (currently LINE-based only)
 - [ ] CLI-Anything integration for automated DXF merge
 - [ ] Batch processing for multiple plate designs

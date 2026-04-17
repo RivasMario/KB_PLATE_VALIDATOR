@@ -16,9 +16,27 @@ def find_rectangles_from_lines(dxf_path):
     v_lines = {}
     tolerance = 0.5
 
-    for line in [e for e in msp if e.dxftype() == 'LINE']:
-        x1, y1 = line.dxf.start.x, line.dxf.start.y
-        x2, y2 = line.dxf.end.x, line.dxf.end.y
+    # Handle both LINE and LWPOLYLINE entities
+    entities = list(msp.query('LINE LWPOLYLINE'))
+    
+    segments = []
+    for entity in entities:
+        if entity.dxftype() == 'LINE':
+            segments.append((entity.dxf.start, entity.dxf.end))
+        elif entity.dxftype() == 'LWPOLYLINE':
+            # Get points from vertices
+            points = list(entity.vertices())
+            if not points:
+                continue
+            # If closed, add first point to end
+            if entity.closed:
+                points.append(points[0])
+            for i in range(len(points)-1):
+                segments.append((points[i], points[i+1]))
+
+    for start, end in segments:
+        x1, y1 = start[0], start[1]
+        x2, y2 = end[0], end[1]
 
         if abs(y1 - y2) < 0.1:
             y = round(y1, 1)
@@ -199,11 +217,18 @@ def draw_map(left_cuts, bottom_cuts, screw_holes, switches, combos, stabs, bound
     return '\n'.join(lines)
 
 def main():
+    import sys
+    if len(sys.argv) > 1:
+        plate_dxf = Path(sys.argv[1])
+    else:
+        plate_dxf = Path(r"C:\Users\v-mariorivas\Downloads\96plate_FINAL_WITH_PCB.dxf")
+        if not plate_dxf.exists():
+             plate_dxf = Path(r"C:\Users\v-mariorivas\Downloads\cc1e0e052d37d91e9d1f8f9d7166eea779a44e9f_switch.dxf")
+
     kicad = Path(r"C:\Users\v-mariorivas\OneDrive - Microsoft\Desktop\96_ Hotswap Keyboard PCB\KiCAD Source Files\rivasmario 96% Hotswap Rp2040.kicad_pcb")
-    plate_dxf = Path(r"C:\Users\v-mariorivas\Downloads\96plate.dxf")
 
     print("\n" + "="*80)
-    print("96PLATE.DXF VALIDATION")
+    print(f"VALIDATING: {plate_dxf.name}")
     print("="*80 + "\n")
 
     # Extract plate holes
@@ -220,10 +245,31 @@ def main():
 
     # Extract PCB elements
     print("Scanning PCB from KiCad...")
-    screw_holes = find_kicad_screw_holes(kicad)
-    left_cuts, bottom_cuts, pcb_bounds = find_edge_cutouts(kicad)
+    raw_screw_holes = find_kicad_screw_holes(kicad)
+    raw_left_cuts, raw_bottom_cuts, pcb_bounds = find_edge_cutouts(kicad)
+    
+    # --- TRANSFORMATION (Match add_holes_freecad.py) ---
+    # Optimal Mirror-Y Found: dx=-52, dy=-71
+    pcb_cy = 127.1
+    dx, dy = -52, -71
+    
+    screw_holes = []
+    for sx, sy in raw_screw_holes:
+        my = pcb_cy - (sy - pcb_cy)
+        screw_holes.append((sx + dx, my + dy))
+        
+    left_cuts = []
+    for x, y, d in raw_left_cuts:
+        my = pcb_cy - (y - pcb_cy)
+        left_cuts.append((x + dx, my + dy, d))
+        
+    bottom_cuts = []
+    for x, y, d in raw_bottom_cuts:
+        my = pcb_cy - (y - pcb_cy)
+        bottom_cuts.append((x + dx, my + dy, d))
+    # --------------------------------------------------
 
-    print(f"PCB ELEMENTS TO PLACE:")
+    print(f"PCB ELEMENTS (TRANSFORMED):")
     print(f"  Screw holes: {len(screw_holes)}")
     print(f"  Left edge cutouts: {len(left_cuts)}")
     print(f"  Bottom edge cutouts: {len(bottom_cuts)}\n")

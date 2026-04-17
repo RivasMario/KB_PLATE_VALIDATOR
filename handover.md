@@ -2,66 +2,54 @@
 
 ## Current Project Status (Latest)
 
-### What Was Done
+### What Was Done (April 16, 2026 - Gemini Update)
 
-KB_PLATE_VALIDATOR - Complete pipeline for validating keyboard plate DXF files and adding PCB elements (screw holes, edge cutouts) using FreeCAD.
+KB_PLATE_VALIDATOR - **FULLY AUTOMATED** pipeline for validating keyboard plate DXF files and adding PCB elements (screw holes, edge cutouts) using FreeCAD.
 
-**Current State**: FreeCAD-based hole injection working. Successfully creates PCB element geometry at exact coordinates from KiCad file.
+**Current State**: 
+- ✅ **Automated DXF Export**: The pipeline now fully automates the DXF export process from FreeCAD. No manual UI interaction is required.
+- ✅ **Robust Macro Logic**: The FreeCAD macro now includes multi-method fallbacks (using `importDXF` directly) for both importing the plate DXF and exporting the final merged result in headless mode.
+- ✅ **LWPOLYLINE Support**: Rectangle detection algorithm in validation scripts now supports both `LINE` and `LWPOLYLINE` entities, fixing issues where "fresh" DXF files showed zero holes.
+- ✅ **Flexible Validation**: `scripts/validate_new_plate.py` now accepts a DXF path as a command-line argument.
+- ✅ **Agent Documentation**: Created `GEMINI.md` for agent-specific workflows and troubleshooting.
+
 **Latest Test File**: `cc1e0e052d37d91e9d1f8f9d7166eea779a44e9f_switch.dxf` 
-**Output**: `cc1e0e052d37d91e9d1f8f9d7166eea779a44e9f_PCB_HOLES.FCStd` (FreeCAD document with 15 circle objects: 11 screw holes + 4 edge cutouts)
+**Output DXF**: `96plate_FREECAD_WITH_PCB.dxf` (Merged DXF containing original plate + 15 PCB elements)
+**Output FCStd**: `96plate_FREECAD_WITH_PCB.FCStd` (FreeCAD document with 15 circle objects: 11 screw holes + 4 edge cutouts)
 
 ### Current Pipeline (End-to-End)
 
 **Step 1: Extract PCB Elements from KiCad**
-- Function: `find_kicad_screw_holes()` - extracts 11 M2 mounting holes via regex on footprint positions
-- Function: `find_edge_cutouts()` - extracts 4 edge cutouts from gr_arc elements on Edge.Cuts layer
-- Output: Lists of (x, y) coordinates at exact PCB measurements
+- Function: `find_kicad_screw_holes()` - extracts 11 M2 mounting holes via regex on footprint positions.
+- Function: `find_edge_cutouts()` - extracts 4 edge cutouts from `gr_arc` elements on `Edge.Cuts` layer.
 
-**Step 2: Find Plate Holes via Rectangle Detection**
-- Function: `find_rectangles_from_lines()` - analyzes DXF LINE entities to reconstruct complete rectangles
-- Classification: `classify_holes()` - sorts into switches (13.9×13.9mm), combos (13.9×31-43mm), stabs (8-10×18-26mm)
-- Deduplication: Position-based clustering with 5mm tolerance to eliminate overlapping line artifacts
-- Output: Lists of (cx, cy, w, h) for each detected hole type
+**Step 2: Add PCB Elements to Plate DXF (FreeCAD)**
+- Script: `scripts/add_holes_freecad.py`.
+- Generates a FreeCAD macro that:
+    - Imports the original plate DXF using `importDXF.insert`.
+    - Creates 11 screw hole circles (radius 1.1mm) and 4 edge cutout circles (radius 0.5mm).
+    - Exports the *entire* document to a new DXF using `importDXF.export`.
+    - Saves a native FreeCAD `.FCStd` file for reference.
+- Runs `freecadcmd.exe` headless to execute the macro.
 
-**Step 3: Validation & Visualization**
-- Function: `draw_map()` - generates ASCII map at 5mm/char scale showing all elements
-- Function: `distance()` + overlap check - validates no PCB holes overlap plate holes (safe threshold: 8.55mm)
-- Flags marginal conflicts for review
+**Step 3: Find Plate Holes & Validate**
+- Script: `scripts/validate_new_plate.py <output_dxf>`.
+- Function: `find_rectangles_from_lines()` - Analyzes `LINE` and `LWPOLYLINE` entities to reconstruct rectangles.
+- Classification & Deduplication: Position-based clustering (5mm tolerance) to identify switch positions.
+- Overlap Check: Validates no PCB holes overlap switch/stab holes (safe threshold: 8.55mm).
+- Output: ASCII map showing all elements and a summary of conflicts.
 
-**Step 4: Add PCB Elements to Plate DXF (NEW - FreeCAD)**
-- Script: `scripts/add_holes_freecad.py` - generates FreeCAD Python macro
-- Creates: `freecad_add_holes_macro.py` in Downloads folder
-- Macro creates new FreeCAD document with:
-  - 11 circles (radius 1.1mm) for screw holes
-  - 4 circles (radius 0.5mm) for edge cutouts
-  - All positioned at exact PCB coordinates
-- Execution: Runs `freecadcmd.exe` headless to execute macro
-- Output: FreeCAD document (.FCStd format) with all PCB elements
+### What Worked Well (Gemini Update)
 
-**Step 5: Export & Merge (Manual Next Step)**
-- Open FCStd in FreeCAD UI
-- Export to DXF (File → Export)
-- Merge with original plate DXF using FreeCAD or Inkscape
-- Or import circles into plate DXF separately
+1. ✅ **`importDXF` Module**: Directly calling `importDXF.insert()` and `importDXF.export()` resolved the "no supported file format" and missing file errors previously encountered with the standard `Import` module in CLI mode.
+2. ✅ **Path Handling**: Using raw strings and replacing backslashes with forward slashes ensured FreeCAD could find files reliably on Windows.
+3. ✅ **Polylines**: Adding `LWPOLYLINE` support successfully identified holes in the latest DXF downloads that were previously invisible to the scripts.
 
-### What Worked Well
+### Next Steps for Future Agents / Developers
 
-1. ✅ **FreeCAD PCB element creation**: Successfully creates circles at exact PCB coordinates
-   - Draft.makeCircle() with Placement objects handles coordinate system correctly
-   - No scaling corruption unlike Python ezdxf approach
-   - Reliable headless execution via freecadcmd.exe
-
-2. ✅ **PCB element extraction**: Both screw holes and edge cutouts parsed from KiCad reliably
-   - Regex patterns match mounting hole footprints (MountingHole_2.2mm_M2)
-   - Arc detection identifies edge cutouts on Edge.Cuts layer
-
-3. ✅ **Rectangle detection for plate holes**: Successfully identifies 100+ distinct holes despite overlapping DXF line patterns
-   - Size-based classification correctly separates switches, combos, stabilizers
-   - Position-based clustering with 5mm tolerance eliminates duplicates
-
-4. ✅ **Overlap validation**: Distance-based check correctly flags conflicts
-   - Euclidean distance formula identifies marginal conflicts
-   - Safe threshold: 8.55mm (screw radius + switch half-width + tolerance)
+1. ⏳ **3D Preview Generation**: Add a script to generate a 3D view (via FreeCAD) showing the plate, PCB holes, and switch cutouts in 3D for better visualization.
+2. ⏳ **Batch Analysis**: Create a harness to run the validation against multiple plate sources (ai03 vs swillkb) in one go.
+3. ⏳ **Tolerance Analysis**: Implement a more sophisticated clearance check that accounts for the exact shape of combo holes versus pure switches.
 
 ### What Didn't Work / Known Issues
 

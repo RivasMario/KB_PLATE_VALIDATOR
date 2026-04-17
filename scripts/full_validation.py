@@ -16,9 +16,27 @@ def find_rectangles_from_lines(dxf_path):
     v_lines = {}
     tolerance = 0.5
 
-    for line in [e for e in msp if e.dxftype() == 'LINE']:
-        x1, y1 = line.dxf.start.x, line.dxf.start.y
-        x2, y2 = line.dxf.end.x, line.dxf.end.y
+    # Handle both LINE and LWPOLYLINE entities
+    entities = list(msp.query('LINE LWPOLYLINE'))
+    
+    segments = []
+    for entity in entities:
+        if entity.dxftype() == 'LINE':
+            segments.append((entity.dxf.start, entity.dxf.end))
+        elif entity.dxftype() == 'LWPOLYLINE':
+            # Get points from vertices
+            points = list(entity.vertices())
+            if not points:
+                continue
+            # If closed, add first point to end
+            if entity.closed:
+                points.append(points[0])
+            for i in range(len(points)-1):
+                segments.append((points[i], points[i+1]))
+
+    for start, end in segments:
+        x1, y1 = start[0], start[1]
+        x2, y2 = end[0], end[1]
 
         if abs(y1 - y2) < 0.1:
             y = round(y1, 1)
