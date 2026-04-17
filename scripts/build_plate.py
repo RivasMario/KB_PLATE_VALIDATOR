@@ -45,48 +45,127 @@ L_SCREW = "PCB_SCREW_HOLES"
 # ---------- KLE parser ----------
 
 def parse_kle(layout):
+    """
+    Robust KLE parser matching official specification.
+    Handles rotations (r, rx, ry), cursor stepping (x, y), and row resets.
+    """
     keys = []
-    cur_y = 0.0
-    plate_w = 0.0
+    
+    # Global state
+    rx, ry, r = 0.0, 0.0, 0.0
+    
+    # Cursor state
+    kx, ky = 0.0, 0.0
+    
     pending = None
+    
     for row in layout:
         if isinstance(row, dict):
+            # global metadata
             continue
         if not isinstance(row, list):
             continue
-        cur_x = 0.0
-        row_h = 1.0
+            
         for item in row:
             if isinstance(item, dict):
                 pending = dict(item) if pending is None else {**pending, **item}
-                if 'x' in item:
-                    cur_x += item['x']
-                if 'y' in item:
-                    cur_y += item['y']
+                
+                # rx, ry, r change the global rotation center/angle and reset kx, ky
+                if 'rx' in item or 'ry' in item or 'r' in item:
+                    if 'rx' in item: rx = item['rx']
+                    if 'ry' in item: ry = item['ry']
+                    if 'r' in item: r = item['r']
+                    kx = rx
+                    ky = ry
+                    
+                if 'x' in item: kx += item['x']
+                if 'y' in item: ky += item['y']
                 continue
-            w = (pending or {}).get('w', 1)
-            h = (pending or {}).get('h', 1)
+                
+            # It's a string (a key)
+            w = (pending or {}).get('w', 1.0)
+            h = (pending or {}).get('h', 1.0)
+            x2 = (pending or {}).get('x2', 0.0)
+            y2 = (pending or {}).get('y2', 0.0)
+            w2 = (pending or {}).get('w2', w)
+            h2 = (pending or {}).get('h2', h)
+            
             keys.append({
-                'cx_u': cur_x + w / 2.0,
-                'cy_u_down': cur_y + h / 2.0,
-                'w': w,
-                'h': h,
+                'cx_u_raw': kx + w / 2.0,
+                'cy_u_raw': ky + h / 2.0,
+                'w': w, 'h': h,
+                'w2': w2, 'h2': h2, 'x2': x2, 'y2': y2,
                 '_t': (pending or {}).get('_t'),
                 '_s': (pending or {}).get('_s'),
-                '_r': (pending or {}).get('_r', 0),
+                '_r': r, '_rx': rx, '_ry': ry,
                 '_rs': (pending or {}).get('_rs', 0),
                 '_k': (pending or {}).get('_k'),
             })
-            cur_x += w
-            if h > row_h:
-                row_h = h
+            
+            kx += w
             pending = None
-        if cur_x > plate_w:
-            plate_w = cur_x
-        cur_y += 1.0
-    plate_h = cur_y
+            
+        # End of row
+        ky += 1.0
+        kx = rx
+        
+    # Calculate transformed positions and total bounds
+    min_x, max_x = float('inf'), float('-inf')
+    min_y, max_y = float('inf'), float('-inf')
+    
     for k in keys:
-        k['cy_u'] = plate_h - k.pop('cy_u_down')
+        cx, cy = k['cx_u_raw'], k['cy_u_raw']
+        angle, rx_c, ry_c = k['_r'], k['_rx'], k['_ry']
+        
+        if angle != 0:
+            rad = math.radians(angle)
+            cos_a, sin_a = math.cos(rad), math.sin(rad)
+            dx, dy = cx - rx_c, cy - ry_c
+            cx = rx_c + (dx * cos_a - dy * sin_a)
+            cy = ry_c + (dx * sin_a + dy * cos_a)
+            
+        k['cx_u_down'] = cx
+        k['cy_u_down'] = cy
+        
+        # True bounding box from corners
+        w, h = k['w'], k['h']
+        raw_x, raw_y = k['cx_u_raw'], k['cy_u_raw']
+        corners = [
+            (raw_x - w/2, raw_y - h/2),
+            (raw_x + w/2, raw_y - h/2),
+            (raw_x + w/2, raw_y + h/2),
+            (raw_x - w/2, raw_y + h/2)
+        ]
+        # Also check secondary box for ISO enter
+        if k['w2'] != w or k['h2'] != h:
+            w2, h2, x2, y2 = k['w2'], k['h2'], k['x2'], k['y2']
+            raw_x2, raw_y2 = raw_x - w/2 + x2 + w2/2, raw_y - h/2 + y2 + h2/2
+            corners += [
+                (raw_x2 - w2/2, raw_y2 - h2/2),
+                (raw_x2 + w2/2, raw_y2 - h2/2),
+                (raw_x2 + w2/2, raw_y2 + h2/2),
+                (raw_x2 - w2/2, raw_y2 + h2/2)
+            ]
+        
+        for c_x, c_y in corners:
+            if angle != 0:
+                rad = math.radians(angle)
+                cos_a, sin_a = math.cos(rad), math.sin(rad)
+                dx, dy = c_x - rx_c, c_y - ry_c
+                c_x = rx_c + (dx * cos_a - dy * sin_a)
+                c_y = ry_c + (dx * sin_a + dy * cos_a)
+                
+            min_x, max_x = min(min_x, c_x), max(max_x, c_x)
+            min_y, max_y = min(min_y, c_y), max(max_y, c_y)
+            
+    plate_w = max_x - min_x
+    plate_h = max_y - min_y
+    
+    for k in keys:
+        k['cx_u'] = k['cx_u_down'] - min_x
+        k['cy_u'] = max_y - k['cy_u_down']
+        k['_r'] = -k['_r'] # Sign flip for DXF (Y-up) vs KLE (Y-down)
+        
     return keys, plate_w, plate_h
 
 
