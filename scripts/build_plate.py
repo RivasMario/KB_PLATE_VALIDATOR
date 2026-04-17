@@ -802,6 +802,116 @@ def emit_dxf(out_path, ents, screw_holes=None, outline_segments=None,
     doc.saveas(out_path)
 
 
+# ---------- Core API ----------
+
+def generate_plate(kle_path, out_path, pcb_path=None,
+                   switch_type=1, stab_type=0, kerf=0.0, pad=0.0,
+                   screw_diameter=2.4, pcb_dx=0.0, pcb_dy=0.0,
+                   no_auto_align=False, clearance=0.5, snap_screws=False,
+                   fillet=0.0, screw_preset=None, screw_custom=None,
+                   screw_inset=5.0):
+    """
+    Programmatic entry point for generating a plate.
+    Returns a dict with metadata: {keys, plate_w, plate_h, screws, edge_notches, params, issues}
+    """
+    layout = json.loads(Path(kle_path).read_text(encoding='utf-8'))
+    keys, w_u, h_u = parse_kle(layout)
+    ents = build_entities(
+        keys, w_u, h_u,
+        pad=pad, kerf=kerf,
+        switch_type=switch_type, stab_type=stab_type,
+    )
+
+    plate_w = w_u * U1 + 2 * pad
+    plate_h = h_u * U1 + 2 * pad
+    outline = ents[L_OUTLINE][0]
+    cutouts = ents[L_SWITCH] + ents[L_STAB]
+    screw_radius = screw_diameter / 2.0
+
+    screws = None
+    edge_arcs = []
+    params = None
+    issues = []
+
+    # 1. Source screws (Custom > Preset > PCB)
+    if screw_custom:
+        screws = screw_presets.custom_from_string(screw_custom, plate_w, plate_h)
+    elif screw_preset:
+        fn = screw_presets.PRESETS[screw_preset]
+        if screw_preset == 'between_rows':
+            screws = fn(keys, plate_w, pad, screw_inset, U1)
+        else:
+            screws = fn(plate_w, plate_h, inset=screw_inset)
+    elif pcb_path:
+        screws = find_kicad_screw_holes(pcb_path)
+        edge_arcs = find_edge_cutouts(pcb_path)
+        pcb_switches = find_kicad_switches(pcb_path)
+        kle_switches = [(k['cx_u'] * U1 + pad, k['cy_u'] * U1 + pad)
+                        for k in keys]
+
+        if no_auto_align:
+            nudge = lambda pts: [(x + pcb_dx, y + pcb_dy)
+                                 for x, y in pts]
+            screws = nudge(screws)
+            edge_arcs = [transform_arc(a, nudge) for a in edge_arcs]
+        else:
+            params, apply = solve_pcb_transform(pcb_switches, kle_switches)
+            nudged_apply = lambda pts: [(x + pcb_dx, y + pcb_dy)
+                                        for x, y in apply(pts)]
+            screws = nudged_apply(screws)
+            edge_arcs = [transform_arc(a, nudged_apply) for a in edge_arcs]
+
+        if snap_screws:
+            screws = snap_screws_to_grid(screws, kle_switches)
+
+    # 2. Validate (if any screws exist)
+    if screws:
+        issues = validate_screws(screws, screw_radius, outline, cutouts,
+                                 clearance)
+
+    # 3. Build outline segments (PCB Edge.Cuts > Rect + Notches)
+    outline_segments = None
+    if pcb_path:
+        pcb_outline = find_all_edge_cuts(pcb_path)
+        if pcb_outline:
+            nudged_apply = lambda pts: [(x + pcb_dx, y + pcb_dy)
+                                        for x, y in apply(pts)]
+            outline_segments = [transform_segment(seg, nudged_apply)
+                                for seg in pcb_outline]
+            # Re-validate with the real PCB outline if possible
+            real_outline = discretize_segments(outline_segments)
+            if real_outline:
+                outline = real_outline
+                if screws:
+                    issues = validate_screws(screws, screw_radius, outline,
+                                             cutouts, clearance)
+        else:
+            outline_segments = build_outline_segments(plate_w, plate_h, edge_arcs,
+                                                      fillet=fillet)
+    else:
+        # KLE-only mode: use rectangle (with optional fillets and custom notches)
+        outline_segments = build_outline_segments(plate_w, plate_h, edge_arcs,
+                                                  fillet=fillet)
+
+    emit_dxf(
+        out_path, ents,
+        screw_holes=screws,
+        outline_segments=outline_segments,
+        screw_radius=screw_radius,
+    )
+
+    return {
+        "keys": len(keys),
+        "plate_w": plate_w,
+        "plate_h": plate_h,
+        "screws": len(screws or []),
+        "edge_notches": len(edge_arcs),
+        "params": params,
+        "issues": issues,
+        "out_path": out_path
+    }
+
+
 # ---------- CLI ----------
 
 def main():
@@ -845,100 +955,29 @@ def main():
                     help='Inset distance from plate edge for presets (mm)')
     args = ap.parse_args()
 
-    layout = json.loads(Path(args.kle).read_text(encoding='utf-8'))
-    keys, w_u, h_u = parse_kle(layout)
-    ents = build_entities(
-        keys, w_u, h_u,
-        pad=args.pad, kerf=args.kerf,
+    res = generate_plate(
+        args.kle, args.out, pcb_path=args.pcb,
         switch_type=args.switch_type, stab_type=args.stab_type,
+        kerf=args.kerf, pad=args.pad, screw_diameter=args.screw_diameter,
+        pcb_dx=args.pcb_dx, pcb_dy=args.pcb_dy,
+        no_auto_align=args.no_auto_align, clearance=args.clearance,
+        snap_screws=args.snap_screws, fillet=args.fillet,
+        screw_preset=args.screw_preset, screw_custom=args.screw_custom,
+        screw_inset=args.screw_inset
     )
 
-    plate_w = w_u * U1 + 2 * args.pad
-    plate_h = h_u * U1 + 2 * args.pad
-    outline = ents[L_OUTLINE][0]
-    cutouts = ents[L_SWITCH] + ents[L_STAB]
-    screw_radius = args.screw_diameter / 2.0
+    print(f"keys={res['keys']} "
+          f"plate={res['plate_w']:.2f}x{res['plate_h']:.2f}mm "
+          f"screws={res['screws']} edge_notches={res['edge_notches']} "
+          f"-> {res['out_path']}")
 
-    screws = None
-    edge_arcs = []
-    params = None
-    issues = []
-
-    # 1. Source screws (Custom > Preset > PCB)
-    if args.screw_custom:
-        screws = screw_presets.custom_from_string(args.screw_custom, plate_w, plate_h)
-    elif args.screw_preset:
-        fn = screw_presets.PRESETS[args.screw_preset]
-        if args.screw_preset == 'between_rows':
-            screws = fn(keys, plate_w, args.pad, args.screw_inset, U1)
-        else:
-            screws = fn(plate_w, plate_h, inset=args.screw_inset)
-    elif args.pcb:
-        screws = find_kicad_screw_holes(args.pcb)
-        edge_arcs = find_edge_cutouts(args.pcb)
-        pcb_switches = find_kicad_switches(args.pcb)
-        kle_switches = [(k['cx_u'] * U1 + args.pad, k['cy_u'] * U1 + args.pad)
-                        for k in keys]
-
-        if args.no_auto_align:
-            nudge = lambda pts: [(x + args.pcb_dx, y + args.pcb_dy)
-                                 for x, y in pts]
-            screws = nudge(screws)
-            edge_arcs = [transform_arc(a, nudge) for a in edge_arcs]
-        else:
-            params, apply = solve_pcb_transform(pcb_switches, kle_switches)
-            nudged_apply = lambda pts: [(x + args.pcb_dx, y + args.pcb_dy)
-                                        for x, y in apply(pts)]
-            screws = nudged_apply(screws)
-            edge_arcs = [transform_arc(a, nudged_apply) for a in edge_arcs]
-
-        if args.snap_screws:
-            screws = snap_screws_to_grid(screws, kle_switches)
-
-    # 2. Validate (if any screws exist)
-    if screws:
-        issues = validate_screws(screws, screw_radius, outline, cutouts,
-                                 args.clearance)
-
-    # 3. Build outline segments (PCB Edge.Cuts > Rect + Notches)
-    outline_segments = None
-    if args.pcb:
-        pcb_outline = find_all_edge_cuts(args.pcb)
-        if pcb_outline:
-            nudged_apply = lambda pts: [(x + args.pcb_dx, y + args.pcb_dy)
-                                        for x, y in apply(pts)]
-            outline_segments = [transform_segment(seg, nudged_apply)
-                                for seg in pcb_outline]
-            # Re-validate with the real PCB outline if possible
-            real_outline = discretize_segments(outline_segments)
-            if real_outline:
-                outline = real_outline
-                if screws:
-                    issues = validate_screws(screws, screw_radius, outline,
-                                             cutouts, args.clearance)
-        else:
-            outline_segments = build_outline_segments(plate_w, plate_h, edge_arcs,
-                                                      fillet=args.fillet)
-    else:
-        # KLE-only mode: use rectangle (with optional fillets and custom notches)
-        outline_segments = build_outline_segments(plate_w, plate_h, edge_arcs,
-                                                  fillet=args.fillet)
-
-    emit_dxf(
-        args.out, ents,
-        screw_holes=screws,
-        outline_segments=outline_segments,
-        screw_radius=screw_radius,
-    )
-
-    print(f"keys={len(keys)} "
-          f"plate={plate_w:.2f}x{plate_h:.2f}mm "
-          f"screws={len(screws or [])} edge_notches={len(edge_arcs)} "
-          f"-> {args.out}")
+    params = res['params']
     if params is not None:
         print(f"align: flip_x={params['flip_x']} flip_y={params['flip_y']} "
               f"rot={params['rot']} dx={params['dx']:.2f} dy={params['dy']:.2f} "
               f"nn_score={params.get('nn_score', 0):.2f}mm")
+
+    issues = res['issues']
     if issues:
         print(f"VALIDATOR: {len(issues)} issue(s):")
         for i, kind, d in issues[:20]:

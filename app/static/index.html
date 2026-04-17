@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>KB Plate Validator & Generator</title>
+    <link rel="stylesheet" href="static/style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>KB Plate Validator</h1>
+            <p>Generate SendCutSend-ready keyboard plates from KLE and KiCad files.</p>
+        </header>
+
+        <main>
+            <div class="tabs">
+                <button class="tab-btn active" data-tab="pcb">PCB Mode</button>
+                <button class="tab-btn" data-tab="kle">KLE Mode (No PCB)</button>
+            </div>
+
+            <form id="plate-form">
+                <section id="pcb-section" class="tab-content active">
+                    <div class="form-group">
+                        <label for="kle_file">KLE JSON Layout <span class="required">*</span></label>
+                        <div class="drop-zone" id="kle-drop-zone">
+                            <span>Drop KLE .json here or click to upload</span>
+                            <input type="file" id="kle_file" name="kle_file" accept=".json" required>
+                        </div>
+                        <p class="file-name" id="kle-name"></p>
+                    </div>
+
+                    <div class="form-group pcb-only">
+                        <label for="pcb_file">KiCad PCB (.kicad_pcb)</label>
+                        <div class="drop-zone" id="pcb-drop-zone">
+                            <span>Drop KiCad PCB here or click to upload</span>
+                            <input type="file" id="pcb_file" name="pcb_file" accept=".kicad_pcb">
+                        </div>
+                        <p class="file-name" id="pcb-name"></p>
+                    </div>
+                </section>
+
+                <section class="options-section">
+                    <h3>Plate Options</h3>
+                    <div class="options-grid">
+                        <div class="form-group">
+                            <label for="switch_type">Switch Type</label>
+                            <select id="switch_type" name="switch_type">
+                                <option value="0">Plain Square (14mm)</option>
+                                <option value="1" selected>MX + Alps</option>
+                                <option value="2">MX Openable</option>
+                                <option value="3">MX Rotatable</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="stab_type">Stabilizer Type</label>
+                            <select id="stab_type" name="stab_type">
+                                <option value="0" selected>Cherry + Costar</option>
+                                <option value="1">Cherry Spec</option>
+                                <option value="2">Costar Only</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="screw_diameter">Screw Hole Diam (mm)</label>
+                            <input type="number" id="screw_diameter" name="screw_diameter" value="2.4" step="0.1">
+                        </div>
+
+                        <div class="form-group">
+                            <label for="kerf">Laser Kerf (mm)</label>
+                            <input type="number" id="kerf" name="kerf" value="0.0" step="0.01">
+                        </div>
+
+                        <div class="form-group">
+                            <label for="pad">Plate Padding (mm)</label>
+                            <input type="number" id="pad" name="pad" value="0.0" step="0.1">
+                        </div>
+
+                        <div class="form-group">
+                            <label for="fillet">Corner Fillet (mm)</label>
+                            <input type="number" id="fillet" name="fillet" value="0.0" step="0.1">
+                        </div>
+                    </div>
+
+                    <div id="kle-options" class="hidden">
+                        <h3>KLE Mounting Options</h3>
+                        <div class="options-grid">
+                            <div class="form-group">
+                                <label for="screw_preset">Screw Preset</label>
+                                <select id="screw_preset" name="screw_preset">
+                                    <option value="">None</option>
+                                    <option value="4corners">4 Corners</option>
+                                    <option value="6perimeter">6 Perimeter</option>
+                                    <option value="grid3x2">Grid 3x2</option>
+                                    <option value="grid4x2">Grid 4x2</option>
+                                    <option value="between_rows">Between Rows</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="screw_inset">Screw Inset (mm)</label>
+                                <input type="number" id="screw_inset" name="screw_inset" value="5.0" step="0.5">
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <div class="actions">
+                    <button type="submit" class="primary-btn" id="submit-btn">Generate DXF</button>
+                </div>
+            </form>
+
+            <div id="results" class="hidden">
+                <h3>Generation Successful!</h3>
+                <div class="stats-grid">
+                    <div class="stat"><span class="label">Keys:</span> <span id="stat-keys">-</span></div>
+                    <div class="stat"><span class="label">Dimensions:</span> <span id="stat-dims">-</span></div>
+                    <div class="stat"><span class="label">Screws:</span> <span id="stat-screws">-</span></div>
+                </div>
+                <div id="validation-notice" class="notice"></div>
+                <p><a href="#" id="download-link" class="primary-btn">Download DXF Again</a></p>
+            </div>
+
+            <div id="error-message" class="error hidden"></div>
+        </main>
+
+        <footer>
+            <p>&copy; 2026 KB Plate Validator. Built with FastAPI and ezdxf.</p>
+        </footer>
+    </div>
+
+    <script src="static/script.js"></script>
+</body>
+</html>

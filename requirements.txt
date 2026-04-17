@@ -1,13 +1,4 @@
 ezdxf>=1.0
-
-# System requirements:
-# - Python 3.6+
-# - FreeCAD 1.1 (for PCB element creation via freecadcmd.exe)
-#   Install: winget install --id FreeCAD.FreeCAD
-#   Or: Download from https://www.freecadweb.org/
-# - Inkscape (optional, for manual DXF editing)
-#   Install via Chocolatey: choco install inkscape
-
-# Optional CLI tools:
-# - CLI-Anything: https://github.com/HKUDS/CLI-Anything
-#   Clone: git clone https://github.com/HKUDS/CLI-Anything.git
+fastapi>=0.100.0
+uvicorn>=0.22.0
+python-multipart>=0.0.6

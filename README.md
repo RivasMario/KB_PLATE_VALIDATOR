@@ -94,6 +94,34 @@ VALIDATOR: all screws inside plate, none overlapping cutouts
 | `--no-auto-align` | off | Skip brute-force; use raw KiCad coords + manual nudge |
 | `--pcb-dx` / `--pcb-dy` | 0 | Manual nudge after auto-align |
 
+## Web Application
+
+The KB Plate Validator can also be run as a web application with a modern, drag-and-drop interface.
+
+### Running via Docker (Recommended)
+
+1. Build the container:
+   ```bash
+   docker build -t kb-plate-validator .
+   ```
+2. Run the container:
+   ```bash
+   docker run -p 8000:8000 kb-plate-validator
+   ```
+3. Open `http://localhost:8000` in your browser.
+
+### Running Locally
+
+1. Install requirements:
+   ```bash
+   pip install -r requirements.txt
+   ```
+2. Start the server:
+   ```bash
+   python app/main.py
+   ```
+3. Open `http://localhost:8000` in your browser.
+
 ### Mode B: Generate Plate from KLE only (no PCB)
 
 If you don't have a KiCad file, you can still generate a functional plate with standard screw patterns:
