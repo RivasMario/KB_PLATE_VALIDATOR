@@ -44,6 +44,7 @@ async def api_generate_plate(
     screw_preset: Optional[str] = Form(None),
     screw_custom: Optional[str] = Form(None),
     screw_inset: float = Form(5.0),
+    split: bool = Form(False),
 ):
     if not kle_file and not kle_text:
         raise HTTPException(status_code=400, detail="Must provide either KLE file or KLE JSON text.")
@@ -82,7 +83,8 @@ async def api_generate_plate(
                 snap_screws=snap_screws, fillet=fillet,
                 screw_preset=screw_preset if screw_preset else None,
                 screw_custom=screw_custom if screw_custom else None,
-                screw_inset=screw_inset
+                screw_inset=screw_inset,
+                split=split
             )
         except Exception as e:
             raise HTTPException(status_code=400, detail=str(e))
