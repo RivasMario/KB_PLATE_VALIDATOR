@@ -45,7 +45,7 @@ L_SCREW = "PCB_SCREW_HOLES"
 def parse_kle(layout):
     """
     Robust KLE parser matching official specification.
-    KLE rotation is clockwise. Trig is counter-clockwise.
+    KLE rotation is clockwise.
     """
     keys = []
     rx, ry, r = 0.0, 0.0, 0.0
@@ -62,8 +62,7 @@ def parse_kle(layout):
                 if 'rx' in item: rx = item['rx']
                 if 'ry' in item: ry = item['ry']
                 if 'rx' in item or 'ry' in item:
-                    kx = rx
-                    ky = ry
+                    kx, ky = rx, ry
                 if 'r' in item: r = item['r']
                 if 'x' in item: kx += item['x']
                 if 'y' in item: ky += item['y']
@@ -97,22 +96,18 @@ def parse_kle(layout):
     min_y, max_y = float('inf'), float('-inf')
     
     for k in keys:
-        cx, cy = k['cx_u_raw'], k['cy_u_raw']
         angle, rx_c, ry_c = k['_r'], k['_rx'], k['_ry']
         
-        if angle != 0:
-            # KLE angle is clockwise. rotate (cx, cy) around (rx_c, ry_c) clockwise.
-            # CW rotation: x' = x cos a + y sin a, y' = -x sin a + y cos a
-            rad = math.radians(angle)
+        def rotate_point(px, py, ang, cx, cy):
+            if ang == 0: return px, py
+            rad = math.radians(ang)
             cos_a, sin_a = math.cos(rad), math.sin(rad)
-            dx, dy = cx - rx_c, cy - ry_c
-            cx = rx_c + (dx * cos_a - dy * sin_a)
-            cy = ry_c + (dx * sin_a + dy * cos_a)
+            dx, dy = px - cx, py - cy
+            # Clockwise rotation
+            return cx + (dx * cos_a - dy * sin_a), cy + (dx * sin_a + dy * cos_a)
             
-        k['cx_u_down'] = cx
-        k['cy_u_down'] = cy
+        k['cx_u_down'], k['cy_u_down'] = rotate_point(k['cx_u_raw'], k['cy_u_raw'], angle, rx_c, ry_c)
         
-        # Corners for bounding box (rotated)
         w, h = k['w'], k['h']
         raw_x, raw_y = k['cx_u_raw'], k['cy_u_raw']
         corners = [(raw_x-w/2, raw_y-h/2), (raw_x+w/2, raw_y-h/2),
@@ -124,14 +119,7 @@ def parse_kle(layout):
                         (raw_x2+w2/2, raw_y2+h2/2), (raw_x2-w2/2, raw_y2+h2/2)]
         
         for c_x, c_y in corners:
-            if angle != 0:
-                rad = math.radians(angle)
-                cos_a, sin_a = math.cos(rad), math.sin(rad)
-                dx, dy = c_x - rx_c, c_y - ry_c
-                rx_p = rx_c + (dx * cos_a - dy * sin_a)
-                ry_p = ry_c + (dx * sin_a + dy * cos_a)
-            else:
-                rx_p, ry_p = c_x, c_y
+            rx_p, ry_p = rotate_point(c_x, c_y, angle, rx_c, ry_c)
             min_x, max_x = min(min_x, rx_p), max(max_x, rx_p)
             min_y, max_y = min(min_y, ry_p), max(max_y, ry_p)
             
@@ -160,8 +148,8 @@ def build_entities(keys, plate_w_u, plate_h_u, *,
         k = (key['_k'] / 2.0) if key.get('_k') is not None else k_default
         t = key['_t'] if key.get('_t') is not None else switch_type
         s = key['_s'] if key.get('_s') is not None else stab_type
-        r = key.get('_r', 0)
-        rs = key.get('_rs', 0)
+        r = key.get('_r', 0)      # Global key rotation (KLE)
+        rs = key.get('_rs', 0)    # Custom switch-only rotation
         rotate_stab = h > w
 
         stab_shapes = []
@@ -180,32 +168,34 @@ def build_entities(keys, plate_w_u, plate_h_u, *,
         if needs_switch_cutout:
             pts = cutout_registry.SWITCH_TYPES.get(t, cutout_registry.SWITCH_TYPES[0])
             poly = Polygon(pts)
-            if r:
-                poly = affinity.rotate(poly, r, origin=(0, 0))
+            if rs:
+                poly = affinity.rotate(poly, rs, origin=(0, 0))
             key_polys.append(poly)
             
         for pts in stab_shapes:
             poly = Polygon(pts)
             if rotate_stab:
                 poly = affinity.rotate(poly, 90, origin=(0, 0))
-            if rs:
-                poly = affinity.rotate(poly, rs, origin=(0, 0))
             key_polys.append(poly)
             
         if key_polys:
+            # Union switch and stabs before global rotation
             merged = unary_union(key_polys)
+            
+            # Apply global rotation (angle 'r') to the combined cutout
+            if r:
+                merged = affinity.rotate(merged, r, origin=(0, 0))
+            
+            # Apply kerf
             if k != 0:
                 merged = merged.buffer(-k, join_style=2)
+                
+            # Translate to final position
             merged = affinity.translate(merged, xoff=cx, yoff=cy)
             cutout_polys.append(merged)
             
-    global_cutouts = unary_union(cutout_polys)
-    if isinstance(global_cutouts, Polygon):
-        return [global_cutouts]
-    elif isinstance(global_cutouts, MultiPolygon):
-        return list(global_cutouts.geoms)
-    else:
-        return []
+    # Return as list of individual polygons (or holes in a single multi-poly)
+    return cutout_polys
 
 
 # ---------- PCB extraction ----------
