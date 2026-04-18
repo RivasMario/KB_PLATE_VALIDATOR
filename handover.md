@@ -4,35 +4,38 @@
 
 ### Just-Completed Work
 
-- **Hole-Aware Puzzle Split (for 3D Printing)**: 
-  - Upgraded the **Puzzle Split** logic to be "aware" of switch and stabilizer holes.
-  - The script now automatically scans the center of your board to find a **"Safe Zone"** (a vertical gap between key columns).
-  - It prioritizes splitting through empty space, ensuring that **no switch holes are cut in half**, which drastically improves the mechanical strength of 3D printed plates.
+- **Direct DXF to Gerber Conversion**: 
+  - Added a new **"DXF to Gerber"** tab to the web application.
+  - Users can upload an existing DXF plate file (manually tweaked) and the system will automatically parse the standard layers (`PLATE_OUTLINE`, `SWITCH_CUTOUTS`, etc.) and generate a high-quality Gerber ZIP for JLCPCB.
+  - This leverages the same **geometric subtraction engine** used for the main generator, ensuring transparent holes in FR4 plates.
 - **Fixed Gerber Export (JLCPCB-Ready)**: 
-  - **Robust Region Slicing**: Switched from line-based cutouts to **Gerber Regions (G36/G37)** for all switch and stabilizer holes. This is the industry-standard way to ensure automated CAM systems see the holes as internal cutouts.
-  - **Full PCB stack**: Included dummy copper and soldermask layers (with holes subtracted) to force JLCPCB's viewer to render the "Through" features correctly.
-
-- **Form-Fitting Split Mode**: 
-  - Generates tight, professional "islands" around rotated/split clusters for Ergo/Alice boards.
-- **Enhanced Web UI**:
-  - Instant SVG Preview, one-click multi-format downloads.
+  - Uses explicit **geometric subtraction** for Mask/Copper layers.
+  - The board is generated as a solid "Material Polygon" (Outline minus Holes), which is the most reliable way to force JLCPCB's automated viewers to render holes correctly.
+- **Improved Bounding Box & Margins**:
+  - Keys are now perfectly centered within the board outline.
+  - Padding is applied uniformly to all four sides (Top, Bottom, Left, Right).
+- **Format Selection UI**:
+  - Added checkboxes for **DXF**, **Gerber**, and **STL** generation.
+  - Main button renamed to **"Generate Plate Files"** to reflect multi-format support.
+- **Hole-Aware Puzzle Split (for 3D Printing)**: 
+  - Automatically finds the widest gap between key columns to place the zigzag joint, keeping switch holes solid and strong.
 
 ### Recent fixes (this session):
-1. **Intelligent Slicing**: uses high-resolution geometry sampling to find the widest possible X-gap near the board center for the puzzle joint.
-2. **Gerber Recognition**: providing dummy copper and solid soldermask layers ensures manufacturing systems treat the FR4 plate as a real PCB.
-3. **Continuity Fix**: `emit_dxf` now outputs separate closed loops for split/island layouts.
+1. **DXF Parsing**: Integrated `ezdxf` with `Shapely`'s `polygonize` to reconstruct complex plate geometry from uploaded DXF files.
+2. **Margin Math**: Refactored the coordinate translation pipeline to ensure keys never stick out past the board edge.
+3. **Download Reliability**: Verified and fixed all download path identifiers for the API.
 
 ### 1. Web stack details
 Deployable as a single container via the root `Dockerfile`.
 
 ### 2. Next Technical Steps (Future AI)
-- **Manual Split Line**: Allow users to click a location in the UI to manually define the split X-coordinate.
-- **Bone Joints**: Implement "Dog-bone" style joints for even higher tensile strength.
-- **ISO Enter Cutout**: Add the specific "L-shaped" switch cutout to `cutouts.py`.
+- **Automatic Layer Detection**: For the DXF converter, add logic to guess layers based on entity counts if standard layer names are missing.
+- **Custom Puzzle Joint Styles**: Add options for "Bone" or "Dovetail" joints.
+- **Drill Tool Table**: Add a specific tool list (`.drl` metadata) for high-end professional manufacturing.
 
 **Files to look at first**:
-- `scripts/exporters.py`: Gerber stack and Hole-Aware STL split logic.
-- `scripts/build_plate.py`: Core logic.
-- `app/static/index.html`: UI controls.
+- `scripts/exporters.py`: Gerber stack, STL split, and DXF-to-Shapely parsing logic.
+- `scripts/build_plate.py`: Core generation and coordinate alignment.
+- `app/static/index.html`: UI tabs and checkboxes.
 
 **Do NOT regenerate `add_holes_freecad.py` work** — user has moved past it.

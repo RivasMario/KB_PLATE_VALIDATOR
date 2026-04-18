@@ -17,6 +17,7 @@
             <div class="tabs">
                 <button class="tab-btn" data-tab="kle" id="tab-kle" class="active">KLE Mode (No PCB)</button>
                 <button class="tab-btn" data-tab="pcb" id="tab-pcb">PCB Mode</button>
+                <button class="tab-btn" data-tab="convert" id="tab-convert">DXF to Gerber</button>
             </div>
 
             <form id="plate-form">
@@ -52,6 +53,29 @@
                             <input type="file" id="pcb_file" name="pcb_file" accept=".kicad_pcb">
                         </div>
                         <p class="file-name" id="pcb-name"></p>
+                    </div>
+                </section>
+
+                <section id="convert-section" class="tab-content">
+                    <div class="form-group">
+                        <label for="dxf_file">Upload Plate DXF <span class="required">*</span></label>
+                        <div class="drop-zone" id="dxf-drop-zone">
+                            <span>Drop DXF here or click to upload</span>
+                            <input type="file" id="dxf_file" name="dxf_file" accept=".dxf">
+                        </div>
+                        <p class="file-name" id="dxf-name"></p>
+                        <div class="notice" style="margin-top: 1rem;">
+                            <strong>Note:</strong> The DXF must use standard layer names:
+                            <ul style="margin-top: 0.5rem; margin-left: 1.5rem;">
+                                <li><code>PLATE_OUTLINE</code>: Board perimeter</li>
+                                <li><code>SWITCH_CUTOUTS</code>: Switch holes</li>
+                                <li><code>STAB_CUTOUTS</code>: Stabilizer holes</li>
+                                <li><code>PCB_SCREW_HOLES</code>: Mounting holes</li>
+                            </ul>
+                        </div>
+                    </div>
+                    <div class="actions">
+                        <button type="button" class="primary-btn" id="convert-btn" style="background-color: #059669;">Convert to Gerber ZIP</button>
                     </div>
                 </section>
 

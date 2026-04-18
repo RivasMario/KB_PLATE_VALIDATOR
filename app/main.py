@@ -120,6 +120,35 @@ async def api_generate_plate(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
 
+@app.post("/api/convert-dxf")
+async def api_convert_dxf(
+    dxf_file: UploadFile = File(...),
+):
+    from scripts.exporters import parse_dxf_to_shapely, export_gerber
+    
+    temp_dir = Path(tempfile.mkdtemp())
+    try:
+        # Save DXF
+        dxf_path = temp_dir / f"input_{uuid.uuid4()}.dxf"
+        with dxf_path.open("wb") as buffer:
+            shutil.copyfileobj(dxf_file.file, buffer)
+            
+        # Parse
+        geo = parse_dxf_to_shapely(str(dxf_path))
+        if not geo["outline"]:
+            raise HTTPException(status_code=400, detail="Could not find valid outline in PLATE_OUTLINE layer")
+            
+        # Generate Gerber
+        out_zip = temp_dir / f"gerber_{uuid.uuid4()}.zip"
+        export_gerber(geo["outline"], geo["cutouts"], geo["screws"], geo["screw_radius"], str(out_zip))
+        
+        return JSONResponse({
+            "gerber_id": out_zip.name
+        })
+        
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Conversion failed: {str(e)}")
+
 @app.get("/api/download/{file_id}")
 async def api_download_file(file_id: str):
     temp_parent = Path(tempfile.gettempdir())

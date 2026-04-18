@@ -15,29 +15,13 @@ document.addEventListener('DOMContentLoaded', () => {
     const downloadLink = document.getElementById('download-link');
     const downloadGerber = document.getElementById('download-gerber');
     const downloadStl = document.getElementById('download-stl');
+    const dxfInput = document.getElementById('dxf_file');
+    const dxfName = document.getElementById('dxf-name');
+    const dxfDropZone = document.getElementById('dxf-drop-zone');
+    const convertBtn = document.getElementById('convert-btn');
+    const optionsSections = document.querySelectorAll('.options-section, #kle-options, .actions:has(#submit-btn)');
 
     let currentTab = 'kle';
-
-    // KLE Input Mode Toggle
-    const kleModeRadios = document.querySelectorAll('input[name="kle_input_mode"]');
-    const kleFileInputDiv = document.getElementById('kle-file-input');
-    const kleTextInputDiv = document.getElementById('kle-text-input');
-    const kleTextarea = document.getElementById('kle_text');
-
-    kleModeRadios.forEach(radio => {
-        radio.addEventListener('change', (e) => {
-            if (e.target.value === 'file') {
-                kleFileInputDiv.classList.remove('hidden');
-                kleTextInputDiv.classList.add('hidden');
-                kleTextarea.value = ''; // clear text if switching to file
-            } else {
-                kleFileInputDiv.classList.add('hidden');
-                kleTextInputDiv.classList.remove('hidden');
-                kleInput.value = ''; // clear file if switching to text
-                kleName.textContent = '';
-            }
-        });
-    });
 
     // Tab Switching
     tabBtns.forEach(btn => {
@@ -46,12 +30,21 @@ document.addEventListener('DOMContentLoaded', () => {
             btn.classList.add('active');
             currentTab = btn.dataset.tab;
 
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+            const targetId = currentTab === 'convert' ? 'convert-section' : 'pcb-section';
+            document.getElementById(targetId).classList.add('active');
+
             if (currentTab === 'kle') {
                 kleOptions.classList.remove('hidden');
                 pcbOnlyGroups.forEach(el => el.classList.add('hidden'));
-            } else {
+                optionsSections.forEach(el => el.classList.remove('hidden'));
+            } else if (currentTab === 'pcb') {
                 kleOptions.classList.add('hidden');
                 pcbOnlyGroups.forEach(el => el.classList.remove('hidden'));
+                optionsSections.forEach(el => el.classList.remove('hidden'));
+            } else {
+                // Convert tab
+                optionsSections.forEach(el => el.classList.add('hidden'));
             }
             results.classList.add('hidden');
             errorMsg.classList.add('hidden');
@@ -67,6 +60,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     kleInput.addEventListener('change', () => handleFileSelect(kleInput, kleName));
     pcbInput.addEventListener('change', () => handleFileSelect(pcbInput, pcbName));
+    dxfInput.addEventListener('change', () => handleFileSelect(dxfInput, dxfName));
 
     // Drag and Drop
     const setupDropZone = (zone, input, nameEl) => {
@@ -91,6 +85,53 @@ document.addEventListener('DOMContentLoaded', () => {
 
     setupDropZone(kleDropZone, kleInput, kleName);
     setupDropZone(pcbDropZone, pcbInput, pcbName);
+    setupDropZone(dxfDropZone, dxfInput, dxfName);
+
+    // DXF Conversion
+    convertBtn.addEventListener('click', async () => {
+        if (!dxfInput.files || dxfInput.files.length === 0) {
+            alert('Please select a DXF file first.');
+            return;
+        }
+
+        convertBtn.disabled = true;
+        convertBtn.textContent = 'Converting...';
+        results.classList.add('hidden');
+        errorMsg.classList.add('hidden');
+
+        const formData = new FormData();
+        formData.append('dxf_file', dxfInput.files[0]);
+
+        try {
+            const response = await fetch('/api/convert-dxf', {
+                method: 'POST',
+                body: formData
+            });
+
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.detail || 'Conversion failed');
+
+            // Show results with only Gerber download
+            document.getElementById('stat-keys').textContent = 'N/A (DXF Import)';
+            document.getElementById('stat-dims').textContent = 'N/A';
+            document.getElementById('stat-screws').textContent = 'N/A';
+            
+            document.getElementById('preview-container').innerHTML = '<p style="padding: 2rem; color: var(--text-muted);">SVG Preview not available for direct DXF conversion.</p>';
+            
+            downloadLink.classList.add('hidden');
+            downloadStl.classList.add('hidden');
+            downloadGerber.href = `/api/download/${data.gerber_id}`;
+            downloadGerber.classList.remove('hidden');
+            
+            results.classList.remove('hidden');
+        } catch (err) {
+            errorMsg.textContent = err.message;
+            errorMsg.classList.remove('hidden');
+        } finally {
+            convertBtn.disabled = false;
+            convertBtn.textContent = 'Convert to Gerber ZIP';
+        }
+    });
 
     // Form Submission
     form.addEventListener('submit', async (e) => {

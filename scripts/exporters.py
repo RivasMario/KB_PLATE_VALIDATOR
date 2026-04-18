@@ -12,6 +12,9 @@ import shutil
 from pathlib import Path
 import math
 
+import ezdxf
+from ezdxf.math import Vec2
+
 # Gerber generation
 try:
     from gerbonara import GerberFile, ExcellonFile, MM
@@ -170,38 +173,31 @@ def export_stl(outline_poly, cutout_polys, screws, screw_radius, output_stl, thi
     if not result: return None
 
     if puzzle_split:
-        # 1. Find a "Safe X" to split the board that doesn't hit many holes
         minx, miny, maxx, maxy = outline_poly.bounds
         center_x = (minx + maxx) / 2.0
-        
         search_range = 60.0 # mm
         samples = []
         for i in range(int(-search_range * 10), int(search_range * 10)):
             x = center_x + i * 0.1
-            test_box = box(x - 0.5, miny, x + 0.5, maxy) # 1mm wide test zone
+            test_box = box(x - 0.5, miny, x + 0.5, maxy)
             hits = 0
             for p in cutout_polys:
-                if test_box.intersects(p):
-                    hits += 1
+                if test_box.intersects(p): hits += 1
             samples.append((x, hits))
-        
         safe_samples = [s for s in samples if s[1] == 0]
         if not safe_samples:
             min_h = min(s[1] for s in samples)
             safe_samples = [s for s in samples if s[1] == min_h]
         mid_x = min(safe_samples, key=lambda s: abs(s[0] - center_x))[0]
 
-        # 2. Create the zigzag cutting path
         tooth_w = 10.0
         tooth_h = 5.0
         num_teeth = int((maxy - miny) / tooth_w)
         if num_teeth < 2: num_teeth = 2
-        
         step = (maxy - miny) / num_teeth
         pts = [(mid_x, miny - 5.0)]
         for i in range(num_teeth):
             y = miny + i * step
-            # Trapezoid shape
             pts.append((mid_x, y + step*0.2))
             pts.append((mid_x + tooth_h, y + step*0.4))
             pts.append((mid_x + tooth_h, y + step*0.6))
@@ -211,16 +207,61 @@ def export_stl(outline_poly, cutout_polys, screws, screw_radius, output_stl, thi
         cutter_wire = cq.Workplane("XY").polyline(pts)
         pts_left = pts + [(mid_x - 1000, maxy+5), (mid_x - 1000, miny-5)]
         pts_right = pts + [(mid_x + 1000, maxy+5), (mid_x + 1000, miny-5)]
-        
         cutter_left = cq.Workplane("XY").polyline(pts_left).close().extrude(thickness*2, combine=False).translate((0,0,-thickness))
         cutter_right = cq.Workplane("XY").polyline(pts_right).close().extrude(thickness*2, combine=False).translate((0,0,-thickness))
-        
         result_left = result.intersect(cutter_left)
         result_right = result.intersect(cutter_right)
-        
-        final_model = result_left.union(result_right.translate((5, 0, 0)))
-        cq.exporters.export(final_model, str(output_stl))
-    else:
-        cq.exporters.export(result, str(output_stl))
+        result = result_left.union(result_right.translate((5, 0, 0)))
 
+    if result:
+        cq.exporters.export(result, str(output_stl))
     return output_stl
+
+def parse_dxf_to_shapely(dxf_path):
+    """
+    Parse an existing DXF file and reconstruct Shapely geometry.
+    Looks for layers: PLATE_OUTLINE, SWITCH_CUTOUTS, STAB_CUTOUTS, PCB_SCREW_HOLES.
+    """
+    doc = ezdxf.readfile(dxf_path)
+    msp = doc.modelspace()
+    
+    from shapely.ops import polygonize
+    
+    def entities_to_lines(entities):
+        lines = []
+        for e in entities:
+            if e.dxftype() == 'LINE':
+                lines.append([(e.dxf.start.x, e.dxf.start.y), (e.dxf.end.x, e.dxf.end.y)])
+            elif e.dxftype() == 'LWPOLYLINE':
+                pts = list(e.get_points('xy'))
+                if e.closed: pts.append(pts[0])
+                for i in range(len(pts)-1):
+                    lines.append([pts[i], pts[i+1]])
+        return lines
+
+    # 1. Reconstruct Outline
+    outline_entities = msp.query('*[layer=="PLATE_OUTLINE"]')
+    outline_lines = entities_to_lines(outline_entities)
+    outline_polys = list(polygonize(outline_lines))
+    outline_poly = unary_union(outline_polys) if outline_polys else None
+
+    # 2. Reconstruct Cutouts
+    cutout_entities = msp.query('*[layer=="SWITCH_CUTOUTS"] | *[layer=="STAB_CUTOUTS"]')
+    cutout_lines = entities_to_lines(cutout_entities)
+    cutout_polys = list(polygonize(cutout_lines))
+
+    # 3. Reconstruct Screws
+    screw_entities = msp.query('*[layer=="PCB_SCREW_HOLES"]')
+    screws = []
+    screw_radius = 1.2 # default
+    for e in screw_entities:
+        if e.dxftype() == 'CIRCLE':
+            screws.append((e.dxf.center.x, e.dxf.center.y))
+            screw_radius = e.dxf.radius
+
+    return {
+        "outline": outline_poly,
+        "cutouts": cutout_polys,
+        "screws": screws,
+        "screw_radius": screw_radius
+    }
