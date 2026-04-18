@@ -103,15 +103,19 @@ The KB Plate Validator can also be run as a web application with a modern, drag-
 
 ### Running via Docker (Recommended)
 
-1. Build the container:
-   ```bash
-   docker build -t kb-plate-validator .
-   ```
-2. Run the container:
-   ```bash
-   docker run -p 8000:8000 kb-plate-validator
-   ```
-3. Open `http://localhost:8000` in your browser.
+**Pull pre-built image (fastest):**
+```bash
+docker pull ghcr.io/rivasmario/kb_plate_validator:latest
+docker run -p 8000:8000 ghcr.io/rivasmario/kb_plate_validator:latest
+```
+
+**Or build locally:**
+```bash
+docker build -t kb-plate-validator .
+docker run -p 8000:8000 kb-plate-validator
+```
+
+Open `http://localhost:8000` in your browser.
 
 ### Running Locally
 
@@ -299,6 +303,17 @@ SCREW_COMBO
 - Switches detected: 102 (34 pure + 68 combos)
 - Expected: 101 (96 pure + 5 combos)
 - Overlap conflicts: 5 marginal (acceptable clearance)
+
+## Contributing
+
+PRs welcome. The image auto-publishes to `ghcr.io` on every merge to `main` via GitHub Actions.
+
+1. Fork → branch → change
+2. `docker build -t kb-plate-validator .` to validate locally
+3. Open a PR — CI will build the image automatically
+4. Merge → image ships
+
+See `.github/pull_request_template.md` for the PR checklist.
 
 ## License
 

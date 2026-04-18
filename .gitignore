@@ -36,6 +36,7 @@ output/maps/
 # Local development
 .env
 local_config.py
+.venv*/
 
 # DXF and PCB files (large binaries)
 *.dxf
