@@ -23,6 +23,48 @@ document.addEventListener('DOMContentLoaded', () => {
 
     let currentTab = 'kle';
 
+    const disableDownload = (el) => {
+        el.classList.add('btn-disabled');
+        el.removeAttribute('href');
+    };
+    const enableDownload = (el, href) => {
+        el.classList.remove('btn-disabled');
+        el.setAttribute('href', href);
+    };
+    const resetDownloads = () => {
+        [downloadLink, downloadGerber, downloadStl].forEach(disableDownload);
+        results.classList.remove('success');
+    };
+    resetDownloads();
+
+    const progress = document.getElementById('progress');
+    const progressText = document.getElementById('progress-text');
+    let progressTimer = null;
+    const startProgress = (label) => {
+        progress.classList.remove('hidden');
+        const t0 = Date.now();
+        const phases = [
+            [0,   'Parsing input...'],
+            [2,   'Laying out keys...'],
+            [4,   'Generating DXF...'],
+            [8,   'Rendering Gerber layers...'],
+            [20,  'Extruding STL (this is slow)...'],
+            [45,  'Still working... large plates take a minute...'],
+        ];
+        const tick = () => {
+            const sec = ((Date.now() - t0) / 1000);
+            let phase = label || phases[0][1];
+            for (const [t, p] of phases) if (sec >= t) phase = p;
+            progressText.textContent = `${phase}  (${sec.toFixed(1)}s)`;
+        };
+        tick();
+        progressTimer = setInterval(tick, 200);
+    };
+    const stopProgress = () => {
+        if (progressTimer) { clearInterval(progressTimer); progressTimer = null; }
+        progress.classList.add('hidden');
+    };
+
     // Tab Switching
     tabBtns.forEach(btn => {
         btn.addEventListener('click', () => {
@@ -43,11 +85,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 pcbOnlyGroups.forEach(el => el.classList.remove('hidden'));
                 optionsSections.forEach(el => el.classList.remove('hidden'));
             } else {
-                // Convert tab
                 optionsSections.forEach(el => el.classList.add('hidden'));
             }
-            results.classList.add('hidden');
             errorMsg.classList.add('hidden');
+            resetDownloads();
         });
     });
 
@@ -104,8 +145,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
         convertBtn.disabled = true;
         convertBtn.textContent = 'Converting...';
-        results.classList.add('hidden');
         errorMsg.classList.add('hidden');
+        resetDownloads();
+        startProgress('Parsing DXF...');
 
         const formData = new FormData();
         formData.append('dxf_file', dxfInput.files[0]);
@@ -122,38 +164,40 @@ document.addEventListener('DOMContentLoaded', () => {
             });
 
             const data = await response.json();
+            console.log('Convert results:', data);
             if (!response.ok) throw new Error(data.detail || 'Conversion failed');
 
-            // Show results
-            document.getElementById('stat-keys').textContent = 'N/A (DXF Import)';
-            document.getElementById('stat-dims').textContent = 'N/A';
-            document.getElementById('stat-screws').textContent = 'N/A';
-            
-            document.getElementById('preview-container').innerHTML = '<p style="padding: 2rem; color: var(--text-muted);">SVG Preview not available for direct DXF conversion.</p>';
-            
-            downloadLink.classList.add('hidden');
-            
-            if (data.gerber_id) {
-                downloadGerber.href = `/api/download/${data.gerber_id}`;
-                downloadGerber.classList.remove('hidden');
-            } else {
-                downloadGerber.classList.add('hidden');
-            }
+            const s = data.stats || {};
+            document.getElementById('stat-keys').textContent = `${s.cutouts ?? 0} cutouts`;
+            document.getElementById('stat-dims').textContent = s.outline ? 'outline OK' : 'no outline';
+            document.getElementById('stat-screws').textContent = s.screws ?? 0;
 
-            if (data.stl_id) {
-                downloadStl.href = `/api/download/${data.stl_id}`;
-                downloadStl.classList.remove('hidden');
+            document.getElementById('preview-container').innerHTML = '<p style="padding: 2rem; color: var(--text-muted);">SVG Preview not available for direct DXF conversion.</p>';
+
+            if (data.gerber_id) enableDownload(downloadGerber, `/api/download/${data.gerber_id}`);
+            if (data.stl_id) enableDownload(downloadStl, `/api/download/${data.stl_id}`);
+            results.classList.add('success');
+
+            const warnings = [];
+            if (data.gerber_error) warnings.push(`Gerber failed: ${data.gerber_error}`);
+            if (data.stl_error) warnings.push(`STL failed: ${data.stl_error}`);
+            if (!data.gerber_id && !data.stl_id) warnings.push('Server produced no files.');
+            const notice = document.getElementById('validation-notice');
+            if (warnings.length) {
+                notice.textContent = warnings.join(' | ');
+                notice.classList.remove('hidden');
             } else {
-                downloadStl.classList.add('hidden');
+                notice.classList.add('hidden');
             }
-            
-            results.classList.remove('hidden');
+            results.scrollIntoView({behavior: 'smooth', block: 'start'});
         } catch (err) {
             errorMsg.textContent = err.message;
             errorMsg.classList.remove('hidden');
+            errorMsg.scrollIntoView({behavior: 'smooth', block: 'center'});
         } finally {
             convertBtn.disabled = false;
             convertBtn.textContent = 'Convert DXF';
+            stopProgress();
         }
     });
 
@@ -163,13 +207,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
         submitBtn.disabled = true;
         submitBtn.textContent = 'Generating...';
-        results.classList.add('hidden');
         errorMsg.classList.add('hidden');
+        resetDownloads();
+        startProgress('Parsing input...');
 
         const formData = new FormData(form);
         
         // Ensure booleans are handled correctly for FastAPI Form
-        formData.set('no_auto_align', 'false'); 
+        formData.set('no_auto_align', document.getElementById('no_auto_align').checked ? 'true' : 'false'); 
         formData.set('snap_screws', currentTab === 'pcb' ? 'true' : 'false');
         formData.set('split', document.getElementById('split').checked ? 'true' : 'false');
         formData.set('puzzle_split', document.getElementById('puzzle_split').checked ? 'true' : 'false');
@@ -221,36 +266,29 @@ document.addEventListener('DOMContentLoaded', () => {
             const previewContainer = document.getElementById('preview-container');
             previewContainer.innerHTML = data.svg;
 
-            // Handle file download
-            if (data.dxf_id) {
-                downloadLink.href = `/api/download/${data.dxf_id}`;
-                downloadLink.classList.remove('hidden');
-            } else {
-                downloadLink.classList.add('hidden');
-            }
-            
-            if (data.gerber_id) {
-                downloadGerber.href = `/api/download/${data.gerber_id}`;
-                downloadGerber.classList.remove('hidden');
-            } else {
-                downloadGerber.classList.add('hidden');
-            }
+            if (data.dxf_id) enableDownload(downloadLink, `/api/download/${data.dxf_id}`);
+            if (data.gerber_id) enableDownload(downloadGerber, `/api/download/${data.gerber_id}`);
+            if (data.stl_id) enableDownload(downloadStl, `/api/download/${data.stl_id}`);
+            results.classList.add('success');
 
-            if (data.stl_id) {
-                downloadStl.href = `/api/download/${data.stl_id}`;
-                downloadStl.classList.remove('hidden');
-            } else {
-                downloadStl.classList.add('hidden');
+            const warnings = [];
+            if (data.gerber_error) warnings.push(`Gerber export failed: ${data.gerber_error}`);
+            if (data.stl_error) warnings.push(`STL export failed: ${data.stl_error}`);
+            if (warnings.length) {
+                const notice = document.getElementById('validation-notice');
+                notice.textContent = warnings.join(' | ');
+                notice.classList.remove('hidden');
             }
 
-            results.classList.remove('hidden');
-
+            results.scrollIntoView({behavior: 'smooth', block: 'start'});
         } catch (err) {
             errorMsg.textContent = err.message;
             errorMsg.classList.remove('hidden');
+            errorMsg.scrollIntoView({behavior: 'smooth', block: 'center'});
         } finally {
             submitBtn.disabled = false;
             submitBtn.textContent = 'Generate Plate Files';
+            stopProgress();
         }
     });
 });

@@ -178,6 +178,56 @@ input[type="number"], select {
     cursor: not-allowed;
 }
 
+#progress {
+    margin-top: 2rem;
+    padding: 1rem 1.5rem;
+    background-color: #eff6ff;
+    border: 1px solid #bfdbfe;
+    border-radius: 8px;
+}
+
+#progress-text {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--primary-color);
+    margin-bottom: 0.5rem;
+}
+
+#progress-bar-outer {
+    width: 100%;
+    height: 10px;
+    background-color: #dbeafe;
+    border-radius: 5px;
+    overflow: hidden;
+}
+
+#progress-bar-inner {
+    height: 100%;
+    width: 40%;
+    background: linear-gradient(90deg, var(--primary-color), #60a5fa, var(--primary-color));
+    background-size: 200% 100%;
+    border-radius: 5px;
+    animation: progress-slide 1.4s linear infinite, progress-shine 2s linear infinite;
+}
+
+@keyframes progress-slide {
+    0%   { margin-left: -40%; }
+    100% { margin-left: 100%; }
+}
+
+@keyframes progress-shine {
+    0%   { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+}
+
+.primary-btn.btn-disabled {
+    background-color: #cbd5e1 !important;
+    color: #64748b !important;
+    cursor: not-allowed;
+    pointer-events: none;
+    opacity: 0.7;
+}
+
 .hidden {
     display: none;
 }
@@ -185,9 +235,15 @@ input[type="number"], select {
 #results {
     margin-top: 3rem;
     padding: 2rem;
-    background-color: #ecfdf5;
+    background-color: #f8fafc;
     border-radius: 8px;
-    border: 1px solid var(--success-color);
+    border: 1px solid var(--border-color);
+    transition: background-color 0.3s, border-color 0.3s;
+}
+
+#results.success {
+    background-color: #ecfdf5;
+    border-color: var(--success-color);
 }
 
 .stats-grid {

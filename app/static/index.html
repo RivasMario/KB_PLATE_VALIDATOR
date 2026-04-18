@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>KB Plate Validator & Generator</title>
-    <link rel="stylesheet" href="static/style.css?v=2">
+    <link rel="stylesheet" href="static/style.css?v=6">
 </head>
 <body>
     <div class="container">
@@ -54,6 +54,23 @@
                         </div>
                         <p class="file-name" id="pcb-name"></p>
                     </div>
+
+                    <div class="form-group pcb-only hidden">
+                        <div class="options-grid">
+                            <div class="form-group">
+                                <label for="pcb_dx">PCB X Offset (mm)</label>
+                                <input type="number" id="pcb_dx" name="pcb_dx" value="0.0" step="0.1">
+                            </div>
+                            <div class="form-group">
+                                <label for="pcb_dy">PCB Y Offset (mm)</label>
+                                <input type="number" id="pcb_dy" name="pcb_dy" value="0.0" step="0.1">
+                            </div>
+                            <div class="form-group" style="display: flex; align-items: center; padding-top: 1.5rem;">
+                                <input type="checkbox" id="no_auto_align" name="no_auto_align" style="width: auto; margin-right: 0.5rem;">
+                                <label for="no_auto_align" style="margin-bottom: 0; cursor: pointer;">Disable Auto-Align</label>
+                            </div>
+                        </div>
+                    </div>
                 </section>
 
                 <section id="convert-section" class="tab-content">
@@ -65,13 +82,11 @@
                         </div>
                         <p class="file-name" id="dxf-name"></p>
                         <div class="notice" style="margin-top: 1rem;">
-                            <strong>Note:</strong> The DXF must use standard layer names:
-                            <ul style="margin-top: 0.5rem; margin-left: 1.5rem;">
-                                <li><code>PLATE_OUTLINE</code>: Board perimeter</li>
-                                <li><code>SWITCH_CUTOUTS</code>: Switch holes</li>
-                                <li><code>STAB_CUTOUTS</code>: Stabilizer holes</li>
-                                <li><code>PCB_SCREW_HOLES</code>: Mounting holes</li>
-                            </ul>
+                            <strong>Note:</strong> Works with any DXF. If standard layers exist
+                            (<code>PLATE_OUTLINE</code>, <code>SWITCH_CUTOUTS</code>,
+                            <code>STAB_CUTOUTS</code>, <code>PCB_SCREW_HOLES</code>) they are used.
+                            Otherwise the largest closed polygon becomes the board outline, smaller
+                            polygons become cutouts, and circles &le; 2mm radius become screw holes.
                         </div>
                     </div>
                     <div class="actions">
@@ -176,23 +191,28 @@
                 </div>
             </form>
 
-            <div id="results" class="hidden">
-                <h3>Generation Successful!</h3>
+            <div id="progress" class="hidden">
+                <div id="progress-text">Starting...</div>
+                <div id="progress-bar-outer"><div id="progress-bar-inner"></div></div>
+            </div>
+
+            <div id="results">
+                <h3 id="results-title">Output Files</h3>
                 <div class="stats-grid">
                     <div class="stat"><span class="label">Keys:</span> <span id="stat-keys">-</span></div>
                     <div class="stat"><span class="label">Dimensions:</span> <span id="stat-dims">-</span></div>
                     <div class="stat"><span class="label">Screws:</span> <span id="stat-screws">-</span></div>
                 </div>
-                
-                <div id="preview-container" style="margin: 2rem 0; text-align: center; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 1rem; overflow: auto; max-height: 400px;">
-                    <!-- SVG will be injected here -->
+
+                <div id="preview-container" style="margin: 2rem 0; text-align: center; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 1rem; overflow: auto; max-height: 400px; min-height: 80px;">
+                    <p style="padding: 2rem; color: var(--text-muted);">Preview appears after generation.</p>
                 </div>
 
-                <div id="validation-notice" class="notice"></div>
+                <div id="validation-notice" class="notice hidden"></div>
                 <div class="download-buttons" style="display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap;">
-                    <a href="#" id="download-link" class="primary-btn">Download DXF</a>
-                    <a href="#" id="download-gerber" class="primary-btn" style="background-color: #059669;">Download Gerber (JLCPCB)</a>
-                    <a href="#" id="download-stl" class="primary-btn" style="background-color: #7c3aed;">Download 3D (STL)</a>
+                    <a href="#" id="download-link" class="primary-btn btn-disabled">Download DXF</a>
+                    <a href="#" id="download-gerber" class="primary-btn btn-disabled" style="background-color: #059669;">Download Gerber (JLCPCB)</a>
+                    <a href="#" id="download-stl" class="primary-btn btn-disabled" style="background-color: #7c3aed;">Download 3D (STL)</a>
                 </div>
             </div>
 
@@ -204,6 +224,6 @@
         </footer>
     </div>
 
-    <script src="static/script.js?v=2"></script>
+    <script src="static/script.js?v=6"></script>
 </body>
 </html>
