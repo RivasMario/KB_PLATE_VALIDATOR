@@ -173,6 +173,7 @@ document.addEventListener('DOMContentLoaded', () => {
             });
 
             const data = await response.json();
+            console.log('Generation results:', data);
 
             if (!response.ok) {
                 throw new Error(data.detail || 'Generation failed');
@@ -197,7 +198,12 @@ document.addEventListener('DOMContentLoaded', () => {
             previewContainer.innerHTML = data.svg;
 
             // Handle file download
-            downloadLink.href = `/api/download/${data.dxf_id}`;
+            if (data.dxf_id) {
+                downloadLink.href = `/api/download/${data.dxf_id}`;
+                downloadLink.classList.remove('hidden');
+            } else {
+                downloadLink.classList.add('hidden');
+            }
             
             if (data.gerber_id) {
                 downloadGerber.href = `/api/download/${data.gerber_id}`;
