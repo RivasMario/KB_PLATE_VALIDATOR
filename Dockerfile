@@ -1,13 +1,16 @@
 # Use a slim Python image
-FROM python:3.11-slim
+FROM python:3.12-slim
 
 # Set working directory
 WORKDIR /app
 
-# Install system dependencies (none needed for ezdxf/fastapi beyond standard python)
-# But we might need some for other future tools
+# Install system dependencies
+# build-essential for some python packages
+# libgl1 and libgomp1 for CadQuery/OCP
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
+    libgl1 \
+    libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements and install

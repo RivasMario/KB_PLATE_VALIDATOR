@@ -119,11 +119,10 @@ def export_gerber(outline_poly, cutout_polys, screws, screw_radius, output_zip):
     shutil.rmtree(temp_dir)
     return output_zip
 
-def export_stl(outline_poly, cutout_polys, screws, screw_radius, output_stl, thickness=1.5, puzzle_split=False):
+def export_stl(outline_poly, cutout_polys, screws, screw_radius, output_stl, thickness=1.5):
     """
     Export plate geometry to an STL file using CadQuery.
     Extrudes the 2D layout into a 3D solid.
-    Supports 'puzzle_split' which cuts the plate in half with a zigzag joint.
     """
     if cq is None:
         raise ImportError("cadquery not installed")
@@ -159,49 +158,6 @@ def export_stl(outline_poly, cutout_polys, screws, screw_radius, output_stl, thi
         
         if result is None: result = island
         else: result = result.union(island)
-
-    if not result: return None
-
-    if puzzle_split:
-        minx, miny, maxx, maxy = outline_poly.bounds
-        center_x = (minx + maxx) / 2.0
-        search_range = 60.0 # mm
-        samples = []
-        for i in range(int(-search_range * 10), int(search_range * 10)):
-            x = center_x + i * 0.1
-            test_box = box(x - 0.5, miny, x + 0.5, maxy)
-            hits = 0
-            for p in cutout_polys:
-                if test_box.intersects(p): hits += 1
-            samples.append((x, hits))
-        safe_samples = [s for s in samples if s[1] == 0]
-        if not safe_samples:
-            min_h = min(s[1] for s in samples)
-            safe_samples = [s for s in samples if s[1] == min_h]
-        mid_x = min(safe_samples, key=lambda s: abs(s[0] - center_x))[0]
-
-        tooth_w = 10.0
-        tooth_h = 5.0
-        num_teeth = int((maxy - miny) / tooth_w)
-        if num_teeth < 2: num_teeth = 2
-        step = (maxy - miny) / num_teeth
-        pts = [(mid_x, miny - 5.0)]
-        for i in range(num_teeth):
-            y = miny + i * step
-            pts.append((mid_x, y + step*0.2))
-            pts.append((mid_x + tooth_h, y + step*0.4))
-            pts.append((mid_x + tooth_h, y + step*0.6))
-            pts.append((mid_x, y + step*0.8))
-        pts.append((mid_x, maxy + 5.0))
-        
-        cutter_wire = cq.Workplane("XY").polyline(pts)
-        pts_left = pts + [(mid_x - 1000, maxy+5), (mid_x - 1000, miny-5)]
-        pts_right = pts + [(mid_x + 1000, maxy+5), (mid_x + 1000, miny-5)]
-        cutter_left = cq.Workplane("XY").polyline(pts_left).close().extrude(thickness*2, combine=False).translate((0,0,-thickness))
-        cutter_right = cq.Workplane("XY").polyline(pts_right).close().extrude(thickness*2, combine=False).translate((0,0,-thickness))
-        result_left = result.intersect(cutter_left)
-        result_right = result.intersect(cutter_right)
-        result = result_left.union(result_right.translate((5, 0, 0)))
 
     if result:
         cq.exporters.export(result, str(output_stl))

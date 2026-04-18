@@ -1,3 +1,4 @@
+import logging
 import os
 import shutil
 import tempfile
@@ -14,7 +15,9 @@ from fastapi.staticfiles import StaticFiles
 import sys
 project_root = str(Path(__file__).parent.parent)
 sys.path.append(project_root)
-from scripts.build_plate import generate_plate
+from scripts.build_plate import generate_plate  # noqa: E402 — also wires up 'plate' logger
+
+log = logging.getLogger('plate')
 
 app = FastAPI(title="KB Plate Validator Web")
 
@@ -50,6 +53,19 @@ async def api_generate_plate(
     gen_gerber: bool = Form(True),
     gen_stl: bool = Form(True),
 ):
+    log.info(
+        "/api/generate kle_file=%s kle_text_len=%s pcb_file=%s switch_type=%s stab_type=%s "
+        "kerf=%s pad=%s screw_diameter=%s pcb_dx=%s pcb_dy=%s no_auto_align=%s clearance=%s "
+        "snap_screws=%s fillet=%s screw_preset=%s screw_custom=%s screw_inset=%s split=%s "
+        "puzzle_split=%s gen_dxf=%s gen_gerber=%s gen_stl=%s",
+        (kle_file.filename if kle_file else None),
+        (len(kle_text) if kle_text else 0),
+        (pcb_file.filename if pcb_file else None),
+        switch_type, stab_type, kerf, pad, screw_diameter, pcb_dx, pcb_dy,
+        no_auto_align, clearance, snap_screws, fillet, screw_preset, screw_custom,
+        screw_inset, split, puzzle_split, gen_dxf, gen_gerber, gen_stl,
+    )
+
     if not kle_file and not kle_text:
         raise HTTPException(status_code=400, detail="Must provide either KLE file or KLE JSON text.")
 
@@ -98,14 +114,23 @@ async def api_generate_plate(
                 gen_stl=gen_stl
             )
         except Exception as e:
+            log.exception("generate_plate raised")
             raise HTTPException(status_code=400, detail=str(e))
+
+        dxf_id = out_path.name if gen_dxf and out_path.exists() else None
+        gerber_id = Path(res["gerber_path"]).name if res.get("gerber_path") else None
+        stl_id = Path(res["stl_path"]).name if res.get("stl_path") else None
+        log.info(
+            "/api/generate result dxf=%s gerber=%s stl=%s gerber_error=%s stl_error=%s issues=%d",
+            dxf_id, gerber_id, stl_id, res.get("gerber_error"), res.get("stl_error"), len(res["issues"]),
+        )
 
         # Return JSON with SVG and download link
         return JSONResponse({
             "svg": res["svg"],
-            "dxf_id": out_path.name if gen_dxf and out_path.exists() else None,
-            "gerber_id": Path(res["gerber_path"]).name if res.get("gerber_path") else None,
-            "stl_id": Path(res["stl_path"]).name if res.get("stl_path") else None,
+            "dxf_id": dxf_id,
+            "gerber_id": gerber_id,
+            "stl_id": stl_id,
             "metadata": {
                 "keys": res["keys"],
                 "plate_w": res["plate_w"],
@@ -118,6 +143,7 @@ async def api_generate_plate(
     except HTTPException:
         raise
     except Exception as e:
+        log.exception("/api/generate server error")
         raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
 
 @app.post("/api/convert-dxf")

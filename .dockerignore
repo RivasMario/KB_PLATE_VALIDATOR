@@ -1,0 +1,16 @@
+.git
+.venv
+.venv312
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.db
+.DS_Store
+logs/*.log
+/tmp
+reproduce_issue.py
+generate_custom_pcb.py
+extract_kle.py
+repro.dxf
+custom_65.kicad_pcb
