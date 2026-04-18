@@ -4,13 +4,10 @@
 
 ### Just-Completed Work
 
-- **Direct DXF to Gerber Conversion**: 
-  - Added a new **"DXF to Gerber"** tab to the web application.
-  - Users can upload an existing DXF plate file (manually tweaked) and the system will automatically parse the standard layers (`PLATE_OUTLINE`, `SWITCH_CUTOUTS`, etc.) and generate a high-quality Gerber ZIP for JLCPCB.
-  - This leverages the same **geometric subtraction engine** used for the main generator, ensuring transparent holes in FR4 plates.
-- **Fixed Gerber Export (JLCPCB-Ready)**: 
-  - Uses explicit **geometric subtraction** for Mask/Copper layers.
-  - The board is generated as a solid "Material Polygon" (Outline minus Holes), which is the most reliable way to force JLCPCB's automated viewers to render holes correctly.
+- **DXF Converter (Full Support)**: 
+  - Upgraded the "DXF to Gerber" tool into a full **"DXF Converter"**.
+  - Users can now upload an existing DXF and convert it into **both Gerber (for JLCPCB)** and **STL (3D Model)** formats.
+  - The converter uses the same high-quality geometric subtraction engine to ensure transparent holes and proper 3D extrusion.
 - **Improved Bounding Box & Margins**:
   - Keys are now perfectly centered within the board outline.
   - Padding is applied uniformly to all four sides (Top, Bottom, Left, Right).
@@ -23,7 +20,7 @@
 ### Recent fixes (this session):
 1. **DXF Parsing**: Integrated `ezdxf` with `Shapely`'s `polygonize` to reconstruct complex plate geometry from uploaded DXF files.
 2. **Margin Math**: Refactored the coordinate translation pipeline to ensure keys never stick out past the board edge.
-3. **Download Reliability**: Verified and fixed all download path identifiers for the API.
+3. **Multi-Format Conversion**: Updated the API and Frontend to support selecting output formats during DXF conversion.
 
 ### 1. Web stack details
 Deployable as a single container via the root `Dockerfile`.

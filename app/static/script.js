@@ -94,6 +94,14 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
+        const genGerber = document.getElementById('gen_gerber').checked;
+        const genStl = document.getElementById('gen_stl').checked;
+
+        if (!genGerber && !genStl) {
+            alert('Please select either Gerber or STL format for conversion.');
+            return;
+        }
+
         convertBtn.disabled = true;
         convertBtn.textContent = 'Converting...';
         results.classList.add('hidden');
@@ -101,6 +109,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const formData = new FormData();
         formData.append('dxf_file', dxfInput.files[0]);
+        formData.append('gen_gerber', genGerber ? 'true' : 'false');
+        formData.append('gen_stl', genStl ? 'true' : 'false');
+        formData.append('thickness', document.getElementById('screw_diameter').value); // Using screw diam field temporarily or adding thickness?
+        // Actually let's just add a dummy thickness or use the value from the form
+        formData.append('thickness', '1.5'); 
 
         try {
             const response = await fetch('/api/convert-dxf', {
@@ -111,7 +124,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const data = await response.json();
             if (!response.ok) throw new Error(data.detail || 'Conversion failed');
 
-            // Show results with only Gerber download
+            // Show results
             document.getElementById('stat-keys').textContent = 'N/A (DXF Import)';
             document.getElementById('stat-dims').textContent = 'N/A';
             document.getElementById('stat-screws').textContent = 'N/A';
@@ -119,9 +132,20 @@ document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('preview-container').innerHTML = '<p style="padding: 2rem; color: var(--text-muted);">SVG Preview not available for direct DXF conversion.</p>';
             
             downloadLink.classList.add('hidden');
-            downloadStl.classList.add('hidden');
-            downloadGerber.href = `/api/download/${data.gerber_id}`;
-            downloadGerber.classList.remove('hidden');
+            
+            if (data.gerber_id) {
+                downloadGerber.href = `/api/download/${data.gerber_id}`;
+                downloadGerber.classList.remove('hidden');
+            } else {
+                downloadGerber.classList.add('hidden');
+            }
+
+            if (data.stl_id) {
+                downloadStl.href = `/api/download/${data.stl_id}`;
+                downloadStl.classList.remove('hidden');
+            } else {
+                downloadStl.classList.add('hidden');
+            }
             
             results.classList.remove('hidden');
         } catch (err) {
@@ -129,7 +153,7 @@ document.addEventListener('DOMContentLoaded', () => {
             errorMsg.classList.remove('hidden');
         } finally {
             convertBtn.disabled = false;
-            convertBtn.textContent = 'Convert to Gerber ZIP';
+            convertBtn.textContent = 'Convert DXF';
         }
     });
 

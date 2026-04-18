@@ -123,8 +123,11 @@ async def api_generate_plate(
 @app.post("/api/convert-dxf")
 async def api_convert_dxf(
     dxf_file: UploadFile = File(...),
+    gen_gerber: bool = Form(True),
+    gen_stl: bool = Form(True),
+    thickness: float = Form(1.5),
 ):
-    from scripts.exporters import parse_dxf_to_shapely, export_gerber
+    from scripts.exporters import parse_dxf_to_shapely, export_gerber, export_stl
     
     temp_dir = Path(tempfile.mkdtemp())
     try:
@@ -138,15 +141,25 @@ async def api_convert_dxf(
         if not geo["outline"]:
             raise HTTPException(status_code=400, detail="Could not find valid outline in PLATE_OUTLINE layer")
             
+        response_data = {}
+
         # Generate Gerber
-        out_zip = temp_dir / f"gerber_{uuid.uuid4()}.zip"
-        export_gerber(geo["outline"], geo["cutouts"], geo["screws"], geo["screw_radius"], str(out_zip))
+        if gen_gerber:
+            out_zip = temp_dir / f"gerber_{uuid.uuid4()}.zip"
+            export_gerber(geo["outline"], geo["cutouts"], geo["screws"], geo["screw_radius"], str(out_zip))
+            response_data["gerber_id"] = out_zip.name
+
+        # Generate STL
+        if gen_stl:
+            out_stl = temp_dir / f"model_{uuid.uuid4()}.stl"
+            export_stl(geo["outline"], geo["cutouts"], geo["screws"], geo["screw_radius"], str(out_stl), thickness=thickness)
+            response_data["stl_id"] = out_stl.name
         
-        return JSONResponse({
-            "gerber_id": out_zip.name
-        })
+        return JSONResponse(response_data)
         
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=400, detail=f"Conversion failed: {str(e)}")
 
 @app.get("/api/download/{file_id}")
