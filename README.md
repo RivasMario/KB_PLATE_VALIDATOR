@@ -341,10 +341,16 @@ After that, every push to `main` auto-deploys via `.github/workflows/fly-deploy.
 
 PRs welcome. The site auto-deploys on every merge to `main`.
 
-1. Fork → branch → change
-2. `docker build -t kb-plate-validator .` to validate locally
-3. Open a PR — CI will build the image automatically
-4. Merge → site updates within ~2 min
+**Workflow: test locally first, then push.**
+
+```bash
+# Start local server
+.venv312/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
+```
+
+> Note: `--reload` doesn't pick up changes to `scripts/build_plate.py` — kill and restart uvicorn after editing it.
+
+Once working locally, push to `main` → site updates at `kb-plate-validator.fly.dev` in ~2 min.
 
 See `.github/pull_request_template.md` for the PR checklist.
 

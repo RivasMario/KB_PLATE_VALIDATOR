@@ -51,6 +51,12 @@
 - **Verify SendCutSend acceptance** of the new closed-LWPOLYLINE DXF output (should resolve their "open entities" error).
 - **Generate-route still single-threaded** — large plates take ~7s for legacy_chain alignment. Not blocking but a future optimization opportunity.
 
+### Development Workflow (decided April 18, 2026)
+- **Test locally first, then push to main.** No dev branch, no post-deploy health checks.
+- Local stack: `.venv312/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload`
+- Kill and rebuild uvicorn on every `scripts/build_plate.py` change (reload doesn't pick up script edits).
+- Push to main only when working locally → auto-deploys to `kb-plate-validator.fly.dev` in ~2 min.
+
 ## Previous Status (Gemini CLI — April 17, 2026, Edge Cuts & Logging — superseded)
 
 ### Just-Completed Work
