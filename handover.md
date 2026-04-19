@@ -38,8 +38,15 @@
 
 ### Pending Issues / Next Steps
 - ~~**Bump Dockerfile base image to `python:3.12-slim`**~~ — **DONE** (was already 3.12-slim; gerbonara + cadquery already in requirements.txt).
-- **GitHub Actions CI/CD** — **DONE** (April 18, 2026): `.github/workflows/docker-publish.yml` builds on every PR, publishes `ghcr.io/rivasmario/kb_plate_validator:latest` on every merge to main. PR template added. `.gitignore` updated to exclude `.venv*/`.
-- **Make ghcr.io package public** after first workflow run: GitHub → Packages → `kb_plate_validator` → Package settings → Change visibility → Public. (Repo is already public; packages still default to private.)
+- **GitHub Actions CI/CD + Fly.io deployment** — **DONE** (April 18, 2026):
+  - `.github/workflows/docker-publish.yml` — builds on every PR, publishes `ghcr.io/rivasmario/kb_plate_validator:latest` on push to main
+  - `.github/workflows/fly-deploy.yml` — auto-deploys to `https://kb-plate-validator.fly.dev` on push to main
+  - `.dockerignore` added (excludes .venv, __pycache__, test scripts)
+  - PR template at `.github/pull_request_template.md`
+  - `.gitignore` updated to exclude `.venv*/`
+  - ghcr.io package visibility set to public
+  - `cadquery` and `gerbonara` removed from `requirements.txt` (too heavy for container; exporters.py handles missing imports gracefully)
+  - Fly.io app: `kb-plate-validator` in `ord` (Chicago), 1GB shared-cpu-1x, auto-stop when idle
 - **STL viewer** installed locally as `f3d` (lightweight, dnf package).
 - **Verify SendCutSend acceptance** of the new closed-LWPOLYLINE DXF output (should resolve their "open entities" error).
 - **Generate-route still single-threaded** — large plates take ~7s for legacy_chain alignment. Not blocking but a future optimization opportunity.

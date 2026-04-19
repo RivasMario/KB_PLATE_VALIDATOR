@@ -94,12 +94,18 @@ VALIDATOR: all screws inside plate, none overlapping cutouts
 | `--no-auto-align` | off | Skip brute-force; use raw KiCad coords + manual nudge |
 | `--pcb-dx` / `--pcb-dy` | 0 | Manual nudge after auto-align |
 
+## Live Site
+
+**https://kb-plate-validator.fly.dev**
+
+Hosted on Fly.io (Chicago). Auto-deploys on every push to `main` via GitHub Actions.
+
 ## Web Application
 
 The KB Plate Validator can also be run as a web application with a modern, drag-and-drop interface. It supports instant **SVG Preview** and multi-format exports:
 * **DXF**: Standard CAD format for SendCutSend and laser cutting.
-* **Gerber (ZIP)**: Production-ready files for JLCPCB and PCB manufacturers.
-* **3D (STL)**: Extruded 1.5mm solids for 3D printing and CAD modeling.
+* **Gerber (ZIP)**: Production-ready files for JLCPCB and PCB manufacturers (requires optional deps).
+* **3D (STL)**: Extruded 1.5mm solids for 3D printing and CAD modeling (requires optional deps).
 
 ### Running via Docker (Recommended)
 
@@ -304,14 +310,41 @@ SCREW_COMBO
 - Expected: 101 (96 pure + 5 combos)
 - Overlap conflicts: 5 marginal (acceptable clearance)
 
+## Deployment Setup (for maintainers)
+
+The site runs on Fly.io. One-time setup if you fork and want your own deployment:
+
+```bash
+# Install flyctl
+curl -L https://fly.io/install.sh | sh
+
+# Authenticate
+flyctl auth login
+
+# Create app (only once)
+flyctl launch --name your-app-name --region ord --yes --no-deploy
+
+# Generate deploy token, add to GitHub secrets as FLY_API_TOKEN
+flyctl tokens create deploy -x 999999h
+
+# First deploy
+flyctl deploy --remote-only
+```
+
+After that, every push to `main` auto-deploys via `.github/workflows/fly-deploy.yml`.
+
+**GitHub Actions workflows:**
+- `docker-publish.yml` — builds and pushes `ghcr.io/rivasmario/kb_plate_validator:latest` on every push to main
+- `fly-deploy.yml` — deploys to `kb-plate-validator.fly.dev` on every push to main
+
 ## Contributing
 
-PRs welcome. The image auto-publishes to `ghcr.io` on every merge to `main` via GitHub Actions.
+PRs welcome. The site auto-deploys on every merge to `main`.
 
 1. Fork → branch → change
 2. `docker build -t kb-plate-validator .` to validate locally
 3. Open a PR — CI will build the image automatically
-4. Merge → image ships
+4. Merge → site updates within ~2 min
 
 See `.github/pull_request_template.md` for the PR checklist.
 
