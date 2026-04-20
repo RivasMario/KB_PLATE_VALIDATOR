@@ -47,3 +47,16 @@ local_config.py
 *.tmp
 *.temp
 *.bak
+
+# Test artifacts
+test_*.stl
+test_*.zip
+test_*.dxf
+test_*.json
+test_*.py
+*.log
+plate_generator.log
+
+# Debug/analysis scripts
+analyze_dxf.py
+draw_ascii.py
