@@ -6,7 +6,7 @@ Usage:
   python scripts/postprocess_plate.py IN.dxf OUT.dxf [--notch-grow 1.0] [--screw-dia 2.6]
 """
 import argparse, ezdxf
-from shapely.geometry import Polygon, box, MultiPolygon
+from shapely.geometry import Polygon, box, MultiPolygon, Point
 from shapely.ops import unary_union
 
 
@@ -23,9 +23,11 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('inp'); ap.add_argument('out')
     ap.add_argument('--notch-grow', type=float, default=1.0)
-    ap.add_argument('--screw-dia', type=float, default=2.6)
+    ap.add_argument('--screw-dia', type=float, default=3.2)   # target (max) diameter
+    ap.add_argument('--min-wall', type=float, default=0.4)    # min material to a cutout/edge
+    ap.add_argument('--min-dia', type=float, default=2.4)     # never shrink below this
     a = ap.parse_args()
-    r = a.screw_dia / 2.0
+    target_r = a.screw_dia / 2.0
 
     doc = ezdxf.readfile(a.inp); msp = doc.modelspace()
     switch = [Polygon(p) for p in loops(msp, 'SWITCH_CUTOUTS') if len(p) >= 3]
@@ -61,9 +63,25 @@ def main():
     for p in internal: addp(p, 'PLATE_OUTLINE')
     for p in switch: addp(p, 'SWITCH_CUTOUTS')
     for p in stab: addp(p, 'STAB_CUTOUTS')
-    for x, y in screws: m.add_circle((x, y), r, dxfattribs={'layer': 'PCB_SCREW_HOLES'})
+
+    # per-hole adaptive radius: as big as target, capped to keep min-wall to the
+    # nearest cutout edge or the plate perimeter; floored at min-dia.
+    clear_geoms = switch + stab + internal
+    floor_r = a.min_dia / 2.0
+    capped = []
+    for x, y in screws:
+        pt = Point(x, y)
+        r = target_r
+        for g in clear_geoms:
+            r = min(r, pt.distance(g) - a.min_wall)
+        r = min(r, main_poly.exterior.distance(pt) - a.min_wall)
+        r = max(r, floor_r)
+        if r < target_r - 1e-6:
+            capped.append(round(r * 2, 2))
+        m.add_circle((x, y), r, dxfattribs={'layer': 'PCB_SCREW_HOLES'})
     out.saveas(a.out)
-    print(f"wrote {a.out}  switches={len(switch)} stabs={len(stab)} screws={len(screws)} (Ø{a.screw_dia})")
+    print(f"wrote {a.out}  switches={len(switch)} stabs={len(stab)} screws={len(screws)} "
+          f"target Ø{a.screw_dia}; capped holes: {capped if capped else 'none'}")
 
 
 if __name__ == '__main__':
