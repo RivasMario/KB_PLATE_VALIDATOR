@@ -47,7 +47,6 @@ local_config.py
 *.tmp
 *.temp
 *.bak
-<<<<<<< Updated upstream
 
 # Test artifacts
 test_*.stl
@@ -61,6 +60,9 @@ plate_generator.log
 # Debug/analysis scripts
 analyze_dxf.py
 draw_ascii.py
-=======
+
+# Aider
 .aider*
->>>>>>> Stashed changes
+
+# Render output
+output/
