@@ -4,10 +4,16 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>KB Plate Validator & Generator</title>
-    <link rel="stylesheet" href="static/style.css?v=6">
+    <link rel="stylesheet" href="static/style.css?v=7">
 </head>
 <body>
-    <div class="container">
+    <div class="container" style="position: relative;">
+        <button id="theme-toggle" class="theme-toggle" aria-label="Toggle Theme">
+            <svg id="theme-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <!-- Default to moon icon since it's dark mode default -->
+                <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+            </svg>
+        </button>
         <header>
             <h1>KB Plate Validator</h1>
             <p>Generate SendCutSend-ready keyboard plates from KLE and KiCad files.</p>
@@ -15,7 +21,7 @@
 
         <main>
             <div class="tabs">
-                <button class="tab-btn" data-tab="kle" id="tab-kle" class="active">KLE Mode (No PCB)</button>
+                <button class="tab-btn active" data-tab="kle" id="tab-kle">KLE Mode</button>
                 <button class="tab-btn" data-tab="pcb" id="tab-pcb">PCB Mode</button>
                 <button class="tab-btn" data-tab="convert" id="tab-convert">DXF Converter</button>
             </div>
@@ -24,17 +30,17 @@
                 <section id="pcb-section" class="tab-content active">
                     <div class="form-group">
                         <label>KLE JSON Layout <span class="required">*</span></label>
-                        <div class="input-toggle" style="margin-bottom: 0.5rem;">
-                            <label style="display: inline-block; font-weight: normal; margin-right: 1rem;">
+                        <div class="input-toggle">
+                            <label>
                                 <input type="radio" name="kle_input_mode" value="text" checked> Paste Raw JSON
                             </label>
-                            <label style="display: inline-block; font-weight: normal;">
+                            <label>
                                 <input type="radio" name="kle_input_mode" value="file"> Upload File
                             </label>
                         </div>
                         
                         <div id="kle-text-input">
-                            <textarea id="kle_text" name="kle_text" rows="6" style="width: 100%; padding: 0.5rem; border: 1px solid var(--border-color); border-radius: 6px; font-family: monospace;" placeholder='[&#10;  ["Esc","Q","W","E","R","T","Y","U","I","O","P","{","}","|"]&#10;]'></textarea>
+                            <textarea id="kle_text" name="kle_text" rows="6" placeholder='[&#10;  ["Esc","Q","W","E","R","T","Y","U","I","O","P","{","}","|"]&#10;]'></textarea>
                         </div>
 
                         <div id="kle-file-input" class="hidden">
@@ -65,9 +71,9 @@
                                 <label for="pcb_dy">PCB Y Offset (mm)</label>
                                 <input type="number" id="pcb_dy" name="pcb_dy" value="0.0" step="0.1">
                             </div>
-                            <div class="form-group" style="display: flex; align-items: center; padding-top: 1.5rem;">
-                                <input type="checkbox" id="no_auto_align" name="no_auto_align" style="width: auto; margin-right: 0.5rem;">
-                                <label for="no_auto_align" style="margin-bottom: 0; cursor: pointer;">Disable Auto-Align</label>
+                            <div class="form-group checkbox-group" style="align-self: center;">
+                                <input type="checkbox" id="no_auto_align" name="no_auto_align">
+                                <label for="no_auto_align">Disable Auto-Align</label>
                             </div>
                         </div>
                     </div>
@@ -81,7 +87,7 @@
                             <input type="file" id="dxf_file" name="dxf_file" accept=".dxf">
                         </div>
                         <p class="file-name" id="dxf-name"></p>
-                        <div class="notice" style="margin-top: 1rem;">
+                        <div class="notice">
                             <strong>Note:</strong> Works with any DXF. If standard layers exist
                             (<code>PLATE_OUTLINE</code>, <code>SWITCH_CUTOUTS</code>,
                             <code>STAB_CUTOUTS</code>, <code>PCB_SCREW_HOLES</code>) they are used.
@@ -90,24 +96,24 @@
                         </div>
                     </div>
                     <div class="actions">
-                        <button type="button" class="primary-btn" id="convert-btn" style="background-color: #059669;">Convert DXF</button>
+                        <button type="button" class="primary-btn btn-secondary" id="convert-btn">Convert DXF</button>
                     </div>
                 </section>
 
                 <section class="options-section">
                     <h3>Generation Formats</h3>
-                    <div class="options-grid" style="grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));">
-                        <div class="form-group" style="display: flex; align-items: center;">
-                            <input type="checkbox" id="gen_dxf" name="gen_dxf" checked style="width: auto; margin-right: 0.5rem;">
-                            <label for="gen_dxf" style="margin-bottom: 0; cursor: pointer;">DXF (Laser)</label>
+                    <div class="options-grid">
+                        <div class="checkbox-group">
+                            <input type="checkbox" id="gen_dxf" name="gen_dxf" checked>
+                            <label for="gen_dxf">DXF (Laser)</label>
                         </div>
-                        <div class="form-group" style="display: flex; align-items: center;">
-                            <input type="checkbox" id="gen_gerber" name="gen_gerber" checked style="width: auto; margin-right: 0.5rem;">
-                            <label for="gen_gerber" style="margin-bottom: 0; cursor: pointer;">Gerber (JLCPCB)</label>
+                        <div class="checkbox-group">
+                            <input type="checkbox" id="gen_gerber" name="gen_gerber" checked>
+                            <label for="gen_gerber">Gerber (JLCPCB)</label>
                         </div>
-                        <div class="form-group" style="display: flex; align-items: center;">
-                            <input type="checkbox" id="gen_stl" name="gen_stl" checked style="width: auto; margin-right: 0.5rem;">
-                            <label for="gen_stl" style="margin-bottom: 0; cursor: pointer;">STL (3D Print)</label>
+                        <div class="checkbox-group">
+                            <input type="checkbox" id="gen_stl" name="gen_stl" checked>
+                            <label for="gen_stl">STL (3D Print)</label>
                         </div>
                     </div>
                 </section>
@@ -156,7 +162,7 @@
                     </div>
 
                     <div id="kle-options">
-                        <h3>KLE Mounting Options</h3>
+                        <h3 style="margin-top: 1.5rem;">KLE Mounting Options</h3>
                         <div class="options-grid">
                             <div class="form-group">
                                 <label for="screw_preset">Screw Preset</label>
@@ -168,19 +174,22 @@
                                     <option value="grid3x2">Grid 3x2</option>
                                     <option value="grid4x2">Grid 4x2</option>
                                     <option value="between_rows">Between Rows</option>
+                                    <option value="snap">Intelligent Snap (Auto Brace)</option>
+                                    <option value="gh60">GH60 standard</option>
+                                    <option value="skyway96">Skyway96 standard</option>
                                 </select>
                             </div>
                             <div class="form-group">
                                 <label for="screw_inset">Screw Inset (mm)</label>
                                 <input type="number" id="screw_inset" name="screw_inset" value="5.0" step="0.5">
                             </div>
-                            <div class="form-group" style="display: flex; align-items: center; padding-top: 1.5rem;">
-                                <input type="checkbox" id="split" name="split" style="width: auto; margin-right: 0.5rem;">
-                                <label for="split" style="margin-bottom: 0; cursor: pointer;">Split Plates (Ergo/Alice)</label>
+                            <div class="form-group checkbox-group" style="align-self: center;">
+                                <input type="checkbox" id="split" name="split">
+                                <label for="split">Split Plates (Ergo/Alice)</label>
                             </div>
-                            <div class="form-group" style="display: flex; align-items: center; padding-top: 1.5rem;">
-                                <input type="checkbox" id="puzzle_split" name="puzzle_split" style="width: auto; margin-right: 0.5rem;">
-                                <label for="puzzle_split" style="margin-bottom: 0; cursor: pointer;">Hole-Aware Puzzle Split (for 3D Printing)</label>
+                            <div class="form-group checkbox-group" style="align-self: center;">
+                                <input type="checkbox" id="puzzle_split" name="puzzle_split">
+                                <label for="puzzle_split">Hole-Aware Puzzle Split</label>
                             </div>
                         </div>
                     </div>
@@ -199,20 +208,20 @@
             <div id="results">
                 <h3 id="results-title">Output Files</h3>
                 <div class="stats-grid">
-                    <div class="stat"><span class="label">Keys:</span> <span id="stat-keys">-</span></div>
-                    <div class="stat"><span class="label">Dimensions:</span> <span id="stat-dims">-</span></div>
-                    <div class="stat"><span class="label">Screws:</span> <span id="stat-screws">-</span></div>
+                    <div class="stat"><span class="label">Keys</span> <span id="stat-keys">-</span></div>
+                    <div class="stat"><span class="label">Dimensions</span> <span id="stat-dims">-</span></div>
+                    <div class="stat"><span class="label">Screws</span> <span id="stat-screws">-</span></div>
                 </div>
 
-                <div id="preview-container" style="margin: 2rem 0; text-align: center; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 1rem; overflow: auto; max-height: 400px; min-height: 80px;">
-                    <p style="padding: 2rem; color: var(--text-muted);">Preview appears after generation.</p>
+                <div id="preview-container">
+                    <p style="color: var(--text-muted); font-weight: 500;">Preview appears after generation.</p>
                 </div>
 
                 <div id="validation-notice" class="notice hidden"></div>
-                <div class="download-buttons" style="display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap;">
-                    <a href="#" id="download-link" class="primary-btn btn-disabled">Download DXF</a>
-                    <a href="#" id="download-gerber" class="primary-btn btn-disabled" style="background-color: #059669;">Download Gerber (JLCPCB)</a>
-                    <a href="#" id="download-stl" class="primary-btn btn-disabled" style="background-color: #7c3aed;">Download 3D (STL)</a>
+                <div class="download-buttons">
+                    <a href="#" id="download-link" class="primary-btn btn-secondary btn-disabled">Download DXF</a>
+                    <a href="#" id="download-gerber" class="primary-btn btn-secondary btn-disabled">Download Gerber</a>
+                    <a href="#" id="download-stl" class="primary-btn btn-secondary btn-disabled">Download STL</a>
                 </div>
             </div>
 
@@ -224,6 +233,6 @@
         </footer>
     </div>
 
-    <script src="static/script.js?v=6"></script>
+    <script src="static/script.js?v=7"></script>
 </body>
 </html>

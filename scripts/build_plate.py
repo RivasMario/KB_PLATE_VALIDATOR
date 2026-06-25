@@ -736,7 +736,13 @@ def generate_plate(kle_path=None, out_path=None, pcb_path=None,
         screws = screw_presets.custom_from_string(screw_custom, key_w, key_h)
     elif screw_preset:
         fn = screw_presets.PRESETS[screw_preset]
-        screws = fn(keys, key_w, 0.0, screw_inset, U1) if screw_preset == 'between_rows' else fn(key_w, key_h, inset=screw_inset)
+        if screw_preset == 'between_rows':
+            screws = fn(keys, key_w, 0.0, screw_inset, U1)
+        elif screw_preset in ('snap', 'gh60', 'skyway96', 'kbic65', 'tkl'):
+            centers = [(k['cx_u']*U1, k['cy_u']*U1) for k in keys]
+            screws = fn(key_w, key_h, centers=centers)
+        else:
+            screws = fn(key_w, key_h, inset=screw_inset)
     elif pcb_path:
         screws = find_kicad_screw_holes(pcb_path)
         pcb_sw, kle_sw = find_kicad_switches(pcb_path), [(k['cx_u']*U1, k['cy_u']*U1) for k in keys]
