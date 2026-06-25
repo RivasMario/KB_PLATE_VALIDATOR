@@ -584,80 +584,88 @@ def apply_poker_cutins(poly, plate_w, plate_h):
     return poly
 
 
-def apply_puzzle_split(outline_poly, all_cutouts, screws, thickness=1.5, gap=10.0, tolerance=0.1):
+def apply_puzzle_split(outline_poly, all_cutouts, screws, keys, U1, gap=10.0, tolerance=0.15):
     """
-    Split the plate geometry into two halves using a zigzag joint.
-    Assigns cutouts by centroid to guarantee they are never intersected or broken.
-    Includes a 'tolerance' gap for 3D printing fit.
+    Split the plate geometry into two halves using a stepped staircase seam
+    (Chaikin smoothed) that weaves between key columns, like the DeltaSplit75.
+    Assigns cutouts by centroid to guarantee they are never intersected.
+    Includes a 'tolerance' gap for fit.
     """
-    minx, miny, maxx, maxy = outline_poly.bounds
-    center_x = (minx + maxx) / 2.0
+    GRID = U1
+    SEAM_BIAS = 1.0
+    BIG_SEAM = 9999.0
     
-    # Wider corridor search
-    tooth_h = 4.0 
-    search_range = 80.0
-    step_size = 0.5
-    
-    samples = []
-    for i in range(int(-search_range / step_size), int(search_range / step_size)):
-        x = center_x + i * step_size
-        test_box = box(x - (tooth_h/2 + 1.0), miny - 5, x + (tooth_h/2 + 1.0), maxy + 5)
-        hits = 0
-        for p in all_cutouts:
-            if test_box.intersects(p): hits += 1
-        samples.append((x, hits))
-    
-    zero_ranges = []
-    current_range = []
-    for x, hits in samples:
-        if hits == 0:
-            current_range.append(x)
-        else:
-            if current_range:
-                zero_ranges.append(current_range)
-                current_range = []
-    if current_range: zero_ranges.append(current_range)
-    
-    if zero_ranges:
-        best_range = max(zero_ranges, key=len)
-        mid_x = sum(best_range) / len(best_range)
-        log.info("found clear corridor at x=%.2f (width %.1fmm)", mid_x, len(best_range) * step_size)
+    # 1. Find the natural gap (the widest horizontal gap between key centers)
+    xs = sorted([k['cx_u'] * GRID for k in keys])
+    if len(xs) < 2:
+        seam_gap = outline_poly.centroid.x
     else:
-        min_hits = min(s[1] for s in samples)
-        best_samples = [s for s in samples if s[1] == min_hits]
-        mid_x = min(best_samples, key=lambda s: abs(s[0] - center_x))[0]
-        log.warning("no clear corridor found; splitting with %d hits at x=%.2f", min_hits, mid_x)
+        center_x = outline_poly.centroid.x
+        gaps = [(xs[i + 1] - xs[i], (xs[i] + xs[i + 1]) / 2) for i in range(len(xs) - 1)]
+        # Sort by: 1. Largest gap (rounded, descending), 2. Closest to center (ascending)
+        gaps.sort(key=lambda g: (-round(g[0], 2), abs(g[1] - center_x)))
+        seam_gap = gaps[0][1]
+    
+    log.info("apply_puzzle_split: found seam gap at x=%.2f", seam_gap)
 
-    tooth_w = 15.0 
-    num_teeth = int((maxy - miny) / tooth_w)
-    if num_teeth < 2: num_teeth = 2
-    step = (maxy - miny) / num_teeth
+    # 2. Extract key geometries for seam bands calculation
+    k_tups = [(k['cx_u'] * GRID, k['cy_u'] * GRID, k['w'], k['h']) for k in keys]
     
-    pts = [(mid_x, miny - 10.0)]
-    for i in range(num_teeth):
-        y = miny + i * step
-        pts.append((mid_x - tooth_h/2, y + step*0.2))
-        pts.append((mid_x + tooth_h/2, y + step*0.4))
-        pts.append((mid_x + tooth_h/2, y + step*0.6))
-        pts.append((mid_x - tooth_h/2, y + step*0.8))
-    pts.append((mid_x, maxy + 10.0))
+    rys = sorted({round(k[1], 0) for k in k_tups})
+    rows = []
+    for y in rys:
+        if not rows or y - rows[-1][-1] > 9:
+            rows.append([y])
+        else:
+            rows[-1].append(y)
+    mids = sorted(sum(r) / len(r) for r in rows)
+    bounds = [-BIG_SEAM] + [(mids[i] + mids[i + 1]) / 2 for i in range(len(mids) - 1)] + [BIG_SEAM]
+    bands = []
+    for i, ym in enumerate(mids):
+        bk = [k for k in k_tups if abs(k[1] - ym) < 9]
+        Lk = [k[0] + k[2] * GRID / 2 for k in bk if k[0] < seam_gap]
+        Rk = [k[0] - k[2] * GRID / 2 for k in bk if k[0] >= seam_gap]
+        sx = (max(Lk) + min((min(Rk) - max(Lk)) / 2, SEAM_BIAS)) if (Lk and Rk) else seam_gap
+        sx = max(seam_gap - GRID, min(seam_gap + GRID, sx))
+        bands.append((bounds[i], bounds[i + 1], sx))
+
+    # 3. Build the shared staircase centerline
+    def chaikin(pts, iters):
+        for _ in range(int(iters)):
+            out = [pts[0]]
+            for a, b in zip(pts, pts[1:]):
+                out.append((0.75 * a[0] + 0.25 * b[0], 0.75 * a[1] + 0.25 * b[1]))
+                out.append((0.25 * a[0] + 0.75 * b[0], 0.25 * a[1] + 0.75 * b[1]))
+            out.append(pts[-1])
+            pts = out
+        return pts
+
+    # Clamp bounds to plate bounds
+    minx, miny, maxx, maxy = outline_poly.bounds
+    ylo, yhi = miny - 30, maxy + 30
+    stair = []
+    for y0, y1, x in bands:
+        stair.append((x, max(ylo, min(yhi, y0))))
+        stair.append((x, max(ylo, min(yhi, y1))))
+        
+    stair = chaikin(stair, 5) # 5 iterations of smoothing
+
+    joint_line = LineString(stair)
+
+    # 5. Build left/right bounding polygons
+    raw_left = [(minx - 100, ylo)] + stair + [(minx - 100, yhi)]
+    poly_left_base = Polygon(raw_left)
     
-    # Base split polygons
-    poly_left_base = Polygon(pts + [(mid_x - 5000, maxy + 10), (mid_x - 5000, miny - 10)])
-    poly_right_base = Polygon(pts + [(mid_x + 5000, maxy + 10), (mid_x + 5000, miny - 10)])
+    raw_right = [(maxx + 100, ylo)] + stair + [(maxx + 100, yhi)]
+    poly_right_base = Polygon(raw_right)
     
-    # Apply tolerance to the right side by buffering the cutter
-    # This creates a small gap between the teeth
     if tolerance > 0:
-        # We shrink the left part and right part slightly at the joint?
-        # Simpler: offset the zigzag line by tolerance/2 for each side.
-        joint_line = LineString(pts)
-        left_cutter = poly_left_base.difference(joint_line.buffer(tolerance/2, join_style=2))
-        right_cutter = poly_right_base.difference(joint_line.buffer(tolerance/2, join_style=2))
+        left_cutter = poly_left_base.difference(joint_line.buffer(tolerance, join_style=1))
+        right_cutter = poly_right_base.difference(joint_line.buffer(tolerance, join_style=1))
     else:
         left_cutter = poly_left_base
         right_cutter = poly_right_base
-    
+
     def process_half(cutter, raw_base_cutter, x_shift=0.0):
         new_outline = outline_poly.intersection(cutter)
         if x_shift != 0:
@@ -665,8 +673,6 @@ def apply_puzzle_split(outline_poly, all_cutouts, screws, thickness=1.5, gap=10.
             
         new_cutouts = []
         for p in all_cutouts:
-            # We use the RAW base cutter (no tolerance) for assignment to ensure 
-            # we don't lose holes that fall into the tolerance gap
             if raw_base_cutter.contains(p.centroid):
                 res = p
                 if x_shift != 0: res = affinity.translate(res, xoff=x_shift)
@@ -684,6 +690,7 @@ def apply_puzzle_split(outline_poly, all_cutouts, screws, thickness=1.5, gap=10.
     right_out, right_cuts, right_screws = process_half(right_cutter, poly_right_base, x_shift=gap)
     
     return (left_out, left_cuts, left_screws), (right_out, right_cuts, right_screws)
+
 
 
 def generate_plate(kle_path=None, out_path=None, pcb_path=None,
@@ -913,7 +920,7 @@ def generate_plate(kle_path=None, out_path=None, pcb_path=None,
 
     if puzzle_split:
         log.info("applying puzzle split to geometry")
-        (l_out, l_cuts, l_screws), (r_out, r_cuts, r_screws) = apply_puzzle_split(outline_poly, all_cutouts, screws, gap=10.0)
+        (l_out, l_cuts, l_screws), (r_out, r_cuts, r_screws) = apply_puzzle_split(outline_poly, all_cutouts, screws, keys, U1, gap=10.0)
         
         # Re-combine for emission
         outline_poly = MultiPolygon([l_out, r_out]) if isinstance(l_out, Polygon) and isinstance(r_out, Polygon) else unary_union([l_out, r_out])
